@@ -5,10 +5,9 @@
     "description": "Auto-generated API Documentation",
     "version": "1.0.0"
   },
-  "host": "https://hotel-management-api-px8z.onrender.com",
+  "host": "hotel-management-api-px8z.onrender.com",
   "basePath": "/api/v1",
   "schemes": [
-    "http",
     "https"
   ],
   "securityDefinitions": {
