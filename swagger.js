@@ -6,9 +6,11 @@ const doc = {
     description: "Auto-generated API Documentation",
     version: "1.0.0",
   },
-  host: "localhost:5000",
+  host: isProduction
+    ? "hotel-management-api-px8z.onrender.com"
+    : "localhost:5000",
   basePath: "/api/v1",
-  schemes: ["http", "https"],
+  schemes: isProduction ? ["https"] : ["http"],
   securityDefinitions: {
     bearerAuth: {
       type: "apiKey",
