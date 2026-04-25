@@ -64,26 +64,28 @@ const getAllRooms = async (req, res) => {
 
 const getRoomById = async (req, res) => {
   try {
-    const { roomId } = req.params;
+    const roomId = parseInt(req.params.roomId);
 
     const room = await prisma.room.findUnique({
       where: { id: roomId },
     });
 
     if (!room) {
-      return res.status(404).json({
-        status: "fail",
-        message: "No room found with that ID",
-      });
+      return res
+        .status(404)
+        .json({ status: "fail", message: "No room found with that ID" });
     }
 
     res.status(200).json({ status: "success", data: room });
-  } catch (error) {}
+  } catch (error) {
+    console.error("Get Room Error:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
 };
 
 const updateRoomById = async (req, res) => {
   try {
-    const { roomId } = req.params;
+    const roomId = parseInt(req.params.roomId);
     const {
       roomNumber,
       floor,
@@ -130,7 +132,7 @@ const updateRoomById = async (req, res) => {
 };
 
 const deleteRoomById = async (req, res) => {
-  const { roomId } = req.params;
+  const roomId = parseInt(req.params.roomId);
 
   try {
     const existingRoom = await prisma.room.findUnique({

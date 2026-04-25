@@ -1,6 +1,3 @@
-const { required } = require("zod/mini");
-const { type } = require("./roomsModel");
-
 const userSchema = {
   type: "object",
   properties: {

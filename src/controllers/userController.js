@@ -255,6 +255,4 @@ module.exports = {
   deleteUser,
   uploadProfileImage,
   deleteProfileImage,
-  uploadProfileImage,
-  deleteProfileImage,
 };

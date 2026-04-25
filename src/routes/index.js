@@ -14,6 +14,4 @@ router.use("/wallet", walletRoutes);
 router.use("/bookings", protect, bookingRoutes);
 router.use("/admin", protect, adminRoutes);
 
-router.use("/admin", authRoutes);
-
 module.exports = router;

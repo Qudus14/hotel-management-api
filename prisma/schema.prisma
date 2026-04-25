@@ -20,8 +20,7 @@ model User {
   isEmailVerified Boolean @default(false)
   profileImage    String?
 
-  // ✅ ADD WALLET SUPPORT
-  walletBalance Float               @default(1000000)
+  walletBalance Float               @default(0)
   walletLedger  WalletTransaction[]
 
   createdAt DateTime  @default(now())
@@ -32,18 +31,17 @@ model User {
 model Room {
   id         Int    @id @default(autoincrement())
   roomNumber String @unique
-  floor      Int? // Added
+  floor      Int?
 
   type     RoomType
-  capacity Int      @default(1) // Added
-  bedType  String? // Added (e.g., King, Twin)
+  capacity Int      @default(1)
+  bedType  String?
 
   price  Decimal    @db.Decimal(10, 2)
   status RoomStatus @default(available)
 
-  // New "Senior Dev" fields
-  amenities   String[] // Stored as an array in Postgres
-  images      String[] // Stored as an array of URLs
+  amenities   String[]
+  images      String[]
   description String?  @db.Text
 
   createdAt DateTime  @default(now())
@@ -54,53 +52,48 @@ model Room {
 model Booking {
   id String @id @default(uuid())
 
-  // Relations
   user   User   @relation(fields: [userId], references: [id])
   userId String
   room   Room   @relation(fields: [roomId], references: [id])
   roomId Int
 
-  // Core Dates
   checkInDate    DateTime
   checkOutDate   DateTime
-  actualCheckIn  DateTime? // Nullable: Filled when they walk in
-  actualCheckOut DateTime? // Nullable: Filled when they leave
+  actualCheckIn  DateTime?
+  actualCheckOut DateTime?
 
-  // Financials
   totalPrice    Decimal       @db.Decimal(12, 2)
   depositAmount Decimal       @default(0) @db.Decimal(12, 2)
   paymentStatus PaymentStatus @default(PENDING)
 
-  // Operational Fields
   status          BookingStatus @default(pending)
   numberOfGuests  Int           @default(1)
   specialRequests String?       @db.Text
+  cancelledAt     DateTime?
 
   payments           Payment[]
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
   walletTransactions WalletTransaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Payment {
   id            String        @id @default(uuid())
-  amount        Decimal       @db.Decimal(12, 2) // Supports up to 9,999,999,999.99
+  amount        Decimal       @db.Decimal(12, 2)
   currency      String        @default("NGN")
   status        PaymentStatus @default(PENDING)
   paymentMethod PaymentMethod
 
-  // IDs for Reconcilliation
-  transactionId String? @unique // Nullable initially if payment hasn't started
-  reference     String  @unique // Your internal ID (e.g., "PAY-2026-001")
+  transactionId String? @unique
+  reference     String  @unique
 
-  // Relations
   booking   Booking @relation(fields: [bookingId], references: [id])
   bookingId String
 
-  // Audit Trail (The "Senior Dev" Safety Net)
-  gatewayResponse Json? // Stores the full payload from Stripe/Paystack
-  failureReason   String? // Detailed error message if status is FAILED
-  paidAt          DateTime? // The actual moment the gateway confirmed success
+  gatewayResponse Json?
+  failureReason   String?
+  paidAt          DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -109,7 +102,6 @@ model Payment {
   @@index([transactionId])
 }
 
-// ✅ ADD WALLET TRANSACTION MODEL
 model WalletTransaction {
   id     String @id @default(uuid())
   user   User   @relation(fields: [userId], references: [id])
@@ -121,14 +113,13 @@ model WalletTransaction {
   balanceAfter  Float
 
   description String
-  reference   String @unique // For idempotency
+  reference   String @unique
 
-  // Optional relation to booking/payment
   bookingId String?
   booking   Booking? @relation(fields: [bookingId], references: [id])
 
-  fundedBy      String? // Admin user ID who funded this
-  fundingReason String? // Why the credits were added
+  fundedBy      String?
+  fundingReason String?
 
   status TransactionStatus @default(COMPLETED)
 
@@ -139,13 +130,12 @@ model WalletTransaction {
   @@index([reference])
 }
 
-// ✅ ADD IDEMPOTENCY KEY MODEL (Race Condition Protection)
 model IdempotencyKey {
   id         String            @id @default(uuid())
   key        String            @unique
-  resourceId String? // ID of created resource (booking, payment, etc.)
+  resourceId String?
   status     IdempotencyStatus @default(PENDING)
-  response   Json? // Store the original response
+  response   Json?
   expiresAt  DateTime
 
   createdAt DateTime @default(now())
@@ -153,45 +143,12 @@ model IdempotencyKey {
   @@index([expiresAt])
 }
 
-enum TransactionType {
-  CREDIT
-  DEBIT
-}
+// ==================== ENUMS ====================
 
-enum TransactionStatus {
-  COMPLETED
-  FAILED
-  REVERSED
-}
-
-enum IdempotencyStatus {
-  PENDING
-  COMPLETED
-  FAILED
-}
-
-// --- ENUMS STAY THE SAME ---
-
-enum PaymentStatus {
-  PENDING
-  SUCCESSFUL
-  FAILED
-  REFUNDED
-  CANCELLED
-}
-
-enum PaymentMethod {
-  CREDIT_CARD
-  DEBIT_CARD
-  PAYPAL
-  BANK_TRANSFER
-  CASH
-}
-
-enum BookingStatus {
-  confirmed
-  pending
-  cancelled
+enum Role {
+  admin
+  staff
+  customer
 }
 
 enum RoomType {
@@ -215,8 +172,44 @@ enum RoomStatus {
   out_of_service @map("out of service")
 }
 
-enum Role {
-  admin
-  staff
-  customer
+enum BookingStatus {
+  pending
+  confirmed
+  checked_in
+  checked_out
+  cancelled
+  no_show
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESSFUL
+  FAILED
+  REFUNDED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CREDIT_CARD
+  DEBIT_CARD
+  PAYPAL
+  BANK_TRANSFER
+  CASH
+}
+
+enum TransactionType {
+  CREDIT
+  DEBIT
+}
+
+enum TransactionStatus {
+  COMPLETED
+  FAILED
+  REVERSED
+}
+
+enum IdempotencyStatus {
+  PENDING
+  COMPLETED
+  FAILED
 }

@@ -1,5 +1,5 @@
 const { PrismaClient } = require("@prisma/client");
-const prisma = new PrismaClient();
+const { prisma } = require("../config/db");
 
 /**
  * Get admin dashboard statistics
@@ -130,10 +130,10 @@ const getAllUsers = async (req, res) => {
  */
 const getUserById = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { userId } = req.params;
 
     const user = await prisma.user.findUnique({
-      where: { id },
+      where: { id: userId },
       select: {
         id: true,
         name: true,

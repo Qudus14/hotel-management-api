@@ -19,7 +19,7 @@ const roomSchema = {
     },
     capacity: { type: "integer", minimum: 1 },
     bedType: { type: "string", nullable: true },
-    price: { type: "number", minimum: 0 }, // Synced with Prisma 'price'
+    price: { type: "number", minimum: 0 },
     status: {
       type: "string",
       enum: [
@@ -34,14 +34,24 @@ const roomSchema = {
     amenities: {
       type: "array",
       items: { type: "string" },
+      nullable: true,
+      default: [],
     },
     images: {
       type: "array",
       items: { type: "string" },
+      nullable: true,
+      default: [],
     },
     description: { type: "string", nullable: true },
   },
   required: ["roomNumber", "type", "price", "status", "capacity"],
 };
 
-module.exports = roomSchema;
+const updateRoomSchema = {
+  type: "object",
+  properties: roomSchema.properties, // reuse same properties
+  required: [], // nothing required on update
+};
+
+module.exports = { roomSchema, updateRoomSchema };

@@ -7,6 +7,7 @@ const compression = require("compression");
 const routes = require("./src/routes/index");
 const { connectDB, disconnectDB } = require("./src/config/db");
 const swaggerUi = require("swagger-ui-express");
+const swaggerSpec = require("./swagger"); // Import swagger config
 require("dotenv").config();
 
 // Import rate limiters and throttles
@@ -24,26 +25,6 @@ const {
 } = require("./src/middleware/throttle");
 
 connectDB();
-
-// ==================== Load Swagger Documentation ====================
-let swaggerDocument;
-try {
-  swaggerDocument = require("./swagger-output.json");
-  console.log("✅ Swagger documentation loaded from swagger-output.json");
-} catch (error) {
-  console.warn(
-    "⚠️  swagger-output.json not found. Run 'node swagger.js' to generate."
-  );
-  swaggerDocument = {
-    openapi: "3.0.0",
-    info: {
-      title: "Hotel Management API",
-      version: "1.0.0",
-      description: "Run 'node swagger.js' to generate full documentation",
-    },
-    paths: {},
-  };
-}
 
 // ==================== Security Middleware ====================
 app.use(
@@ -103,8 +84,14 @@ const swaggerUiOptions = {
 app.use(
   "/api-docs",
   swaggerUi.serve,
-  swaggerUi.setup(swaggerDocument, swaggerUiOptions)
+  swaggerUi.setup(swaggerSpec, swaggerUiOptions) // Use swaggerSpec, not swaggerDocument
 );
+
+// Optional: Serve raw swagger.json
+app.get("/swagger.json", (req, res) => {
+  res.setHeader("Content-Type", "application/json");
+  res.send(swaggerSpec);
+});
 
 // ==================== Apply Rate Limiting ====================
 // Global API rate limit
@@ -116,7 +103,6 @@ app.use("/api/v1", standardThrottle);
 // Serve static files
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// ==================== Health Check Endpoint ====================
 app.get("/health", (req, res) => {
   res.status(200).json({
     status: "healthy",
@@ -145,6 +131,31 @@ app.use("/api/v1/rooms/search", searchThrottle);
 app.use("/api/v1", routes);
 app.use("/public", express.static(path.join(__dirname, "public")));
 
+/**
+ * @openapi
+ * /:
+ *   get:
+ *     tags:
+ *       - Health
+ *     summary: Root endpoint
+ *     description: Welcome message and API information
+ *     responses:
+ *       200:
+ *         description: API is running
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 documentation:
+ *                   type: string
+ *                 version:
+ *                   type: string
+ *                 status:
+ *                   type: string
+ */
 app.get("/", (req, res) => {
   res.json({
     message: "Welcome to the Hotel Management API",
@@ -184,7 +195,8 @@ const server = app.listen(PORT, () => {
   );
   console.log(`📊 Rate limiting enabled`);
   console.log(`🔄 Throttling enabled`);
-  console.log(`📚 Swagger docs: http://localhost:${PORT}/api-docs\n`);
+  console.log(`📚 Swagger docs: http://localhost:${PORT}/api-docs`);
+  console.log(`📄 Swagger JSON: http://localhost:${PORT}/swagger.json\n`);
 });
 
 // Graceful shutdown handlers
