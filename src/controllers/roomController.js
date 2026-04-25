@@ -109,7 +109,6 @@ const updateRoomById = async (req, res) => {
       data: {
         roomNumber,
         type,
-        description,
         bedType,
         floor,
         images,
