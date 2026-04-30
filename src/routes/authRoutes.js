@@ -15,7 +15,7 @@ const router = express.Router();
  *         application/json:
  *           schema:
  *             type: object
- *             required: [name, email, password, phoneNumber]
+ *             required: [name, email, password]
  *             properties:
  *               name:
  *                 type: string
@@ -27,9 +27,11 @@ const router = express.Router();
  *                 type: string
  *     responses:
  *       201:
- *         description: User registered successfully
+ *         description: User registered successfully, returns token
  *       400:
  *         description: Validation error or email already exists
+ *       500:
+ *         description: Internal server error
  */
 router.post("/register", registerUser);
 
@@ -56,6 +58,8 @@ router.post("/register", registerUser);
  *         description: Login successful, returns token
  *       401:
  *         description: Invalid credentials
+ *       500:
+ *         description: Internal server error
  */
 router.post("/login", loginUser);
 

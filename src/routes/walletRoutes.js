@@ -101,17 +101,23 @@ router.post("/fund", fundWallet);
  *         application/json:
  *           schema:
  *             type: object
- *             required: [amount, bookingId]
+ *             required: [bookingId, paymentMethod]
  *             properties:
- *               amount:
- *                 type: number
  *               bookingId:
  *                 type: string
+ *                 example: "f9eda454-be45-4dd2-b434-86ee33089f6c"
+ *               paymentMethod:
+ *                 type: string
+ *                 enum: [CREDIT_CARD, DEBIT_CARD, PAYPAL, BANK_TRANSFER, CASH, WALLET]
+ *                 example: "WALLET"
+ *               idempotencyKey:
+ *                 type: string
+ *                 description: Optional key to prevent duplicate payments
  *     responses:
  *       200:
  *         description: Payment successful
  *       400:
- *         description: Insufficient wallet balance
+ *         description: Invalid payment method or insufficient balance
  *       401:
  *         description: Unauthorized
  *       500:

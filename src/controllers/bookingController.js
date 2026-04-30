@@ -2,37 +2,72 @@ const { prisma } = require("../config/db");
 
 const createBookings = async (req, res) => {
   try {
-    const { userId, roomId, checkInDate, totalPrice, status, checkOutDate } =
-      req.body;
+    // ✅ Get userId from authenticated user (from token), NOT from body
+    const userId = req.user.sub; // <-- THIS IS THE KEY FIX
+    const {
+      roomId,
+      checkInDate,
+      checkOutDate,
+      numberOfGuests,
+      specialRequests,
+    } = req.body;
+
+    // ✅ Remove this validation since userId comes from token
+    // if (!userId || !roomId || !checkInDate || !checkOutDate) { ... }
+
+    // Rest of your code remains the same...
+    const room = await prisma.room.findUnique({ where: { id: roomId } });
+    if (!room) return res.status(404).json({ error: "Room not found" });
+
+    const checkIn = new Date(checkInDate);
+    const checkOut = new Date(checkOutDate);
+    const numberOfNights = Math.ceil((checkOut - checkIn) / (1000 * 3600 * 24));
+
+    if (numberOfNights <= 0) {
+      return res
+        .status(400)
+        .json({ error: "Check-out date must be after check-in date" });
+    }
+
+    const totalPrice = parseFloat(room.price) * numberOfNights;
 
     const existingBooking = await prisma.booking.findFirst({
       where: {
-        userId,
         roomId,
-        checkInDate: new Date(checkInDate),
-        checkOutDate: new Date(checkOutDate),
         status: { not: "cancelled" },
+        OR: [{ checkInDate: { lt: checkOut }, checkOutDate: { gt: checkIn } }],
       },
     });
 
     if (existingBooking) {
-      return res.status(400).json({ error: "Booking already exists" });
+      return res
+        .status(400)
+        .json({ error: "Room is already booked for these dates" });
     }
 
     const newBooking = await prisma.booking.create({
       data: {
         roomId,
-        userId,
+        userId, // ✅ Now using userId from token
         totalPrice,
-        status,
-        checkOutDate,
-        checkInDate,
+        status: "pending",
+        paymentStatus: "PENDING",
+        checkInDate: checkIn,
+        checkOutDate: checkOut,
+        numberOfGuests: numberOfGuests || 1,
+        specialRequests: specialRequests || null,
+      },
+      include: {
+        room: { select: { roomNumber: true, type: true, price: true } },
+        user: { select: { name: true, email: true } },
       },
     });
 
-    res
-      .status(201)
-      .json({ message: "Booking created successfully", booking: newBooking });
+    res.status(201).json({
+      status: "success",
+      message: "Booking created successfully",
+      data: newBooking,
+    });
   } catch (error) {
     console.error("Create Booking Error:", error);
     res.status(500).json({ error: "Internal Server Error" });
@@ -87,7 +122,7 @@ const getBookingById = async (req, res) => {
     const { bookingId } = req.params;
 
     const booking = await prisma.booking.findUnique({
-      where: { bookingId: parseInt(bookingId) },
+      where: { id: bookingId },
     });
 
     if (!booking) {
@@ -106,13 +141,13 @@ const getBookingById = async (req, res) => {
 
 const updateBookingById = async (req, res) => {
   try {
-    const { bookingId } = req.params; // Get bookingId from route parameter
-    const updates = req.body;
+    const { bookingId } = req.params;
+    const { status, paymentStatus } = req.body; // Only accept these two fields
 
-    // ✅ FIX: Use bookingId instead of id
+    // Find the booking using UUID or numeric ID
     const where = bookingId.includes("-")
-      ? { id: bookingId } // UUID
-      : { bookingId: parseInt(bookingId) }; // Numeric ID
+      ? { id: bookingId }
+      : { bookingId: parseInt(bookingId) };
 
     const existingBooking = await prisma.booking.findUnique({
       where,
@@ -123,8 +158,8 @@ const updateBookingById = async (req, res) => {
       return res.status(404).json({ error: "Booking not found" });
     }
 
-    // Validate status transitions
-    if (updates.status && updates.status !== existingBooking.status) {
+    // Validate status transition if status is being updated
+    if (status && status !== existingBooking.status) {
       const validTransitions = {
         pending: ["confirmed", "cancelled"],
         confirmed: ["checked_in", "cancelled", "no_show"],
@@ -134,55 +169,9 @@ const updateBookingById = async (req, res) => {
         no_show: [],
       };
 
-      if (!validTransitions[existingBooking.status]?.includes(updates.status)) {
+      if (!validTransitions[existingBooking.status]?.includes(status)) {
         return res.status(400).json({
-          error: `Cannot transition from "${existingBooking.status}" to "${updates.status}"`,
-        });
-      }
-
-      // Auto-set timestamps
-      if (updates.status === "checked_in" && !updates.actualCheckIn) {
-        updates.actualCheckIn = new Date();
-      }
-      if (updates.status === "checked_out" && !updates.actualCheckOut) {
-        updates.actualCheckOut = new Date();
-      }
-    }
-
-    // Check for date conflicts if dates are being changed
-    if (updates.checkInDate || updates.checkOutDate) {
-      const checkIn = updates.checkInDate
-        ? new Date(updates.checkInDate)
-        : existingBooking.checkInDate;
-      const checkOut = updates.checkOutDate
-        ? new Date(updates.checkOutDate)
-        : existingBooking.checkOutDate;
-
-      const conflictWhere = {
-        roomId: existingBooking.roomId,
-        status: { in: ["pending", "confirmed", "checked_in"] },
-        OR: [
-          {
-            checkInDate: { lt: checkOut },
-            checkOutDate: { gt: checkIn },
-          },
-        ],
-      };
-
-      // ✅ FIX: Use bookingId instead of id
-      if (bookingId.includes("-")) {
-        conflictWhere.id = { not: bookingId };
-      } else {
-        conflictWhere.bookingId = { not: parseInt(bookingId) };
-      }
-
-      const conflictingBooking = await prisma.booking.findFirst({
-        where: conflictWhere,
-      });
-
-      if (conflictingBooking) {
-        return res.status(409).json({
-          error: "Room is already booked for these dates",
+          error: `Cannot transition from "${existingBooking.status}" to "${status}"`,
         });
       }
     }
@@ -190,24 +179,16 @@ const updateBookingById = async (req, res) => {
     // Prepare update data
     const updateData = {};
 
-    if (updates.status) updateData.status = updates.status;
-    if (updates.paymentStatus) updateData.paymentStatus = updates.paymentStatus;
-    if (updates.checkInDate)
-      updateData.checkInDate = new Date(updates.checkInDate);
-    if (updates.checkOutDate)
-      updateData.checkOutDate = new Date(updates.checkOutDate);
-    if (updates.actualCheckIn)
-      updateData.actualCheckIn = new Date(updates.actualCheckIn);
-    if (updates.actualCheckOut)
-      updateData.actualCheckOut = new Date(updates.actualCheckOut);
-    if (updates.totalPrice !== undefined)
-      updateData.totalPrice = parseFloat(updates.totalPrice);
-    if (updates.depositAmount !== undefined)
-      updateData.depositAmount = parseFloat(updates.depositAmount);
-    if (updates.numberOfGuests !== undefined)
-      updateData.numberOfGuests = parseInt(updates.numberOfGuests);
-    if (updates.specialRequests !== undefined)
-      updateData.specialRequests = updates.specialRequests;
+    if (status) updateData.status = status;
+    if (paymentStatus) updateData.paymentStatus = paymentStatus;
+
+    // Auto-set timestamps based on status changes
+    if (status === "checked_in" && !existingBooking.actualCheckIn) {
+      updateData.actualCheckIn = new Date();
+    }
+    if (status === "checked_out" && !existingBooking.actualCheckOut) {
+      updateData.actualCheckOut = new Date();
+    }
 
     // Perform the update
     const updatedBooking = await prisma.booking.update({
@@ -225,8 +206,9 @@ const updateBookingById = async (req, res) => {
     });
 
     res.status(200).json({
+      status: "success",
       message: "Booking updated successfully",
-      booking: updatedBooking,
+      data: updatedBooking,
     });
   } catch (error) {
     console.error("Update Booking Error:", error);
@@ -242,7 +224,7 @@ const cancelBooking = async (req, res) => {
     const { bookingId } = req.params;
 
     const booking = await prisma.booking.findUnique({
-      where: { bookingId: parseInt(bookingId) },
+      where: { id: bookingId },
     });
 
     if (!booking) {
@@ -257,7 +239,7 @@ const cancelBooking = async (req, res) => {
     }
 
     const cancelledBooking = await prisma.booking.update({
-      where: { bookingId: parseInt(bookingId) },
+      where: { id: bookingId },
       data: {
         status: "cancelled",
         cancelledAt: new Date(),

@@ -8,7 +8,7 @@ const options = {
       title: "Hotel Management API",
       version: "1.0.0",
     },
-    servers: [{ url: "http://localhost:5000/api/v1", description: "Local" }],
+    servers: [{ url: "http://localhost:8000/api/v1", description: "Local" }],
     components: {
       securitySchemes: {
         bearerAuth: {

@@ -327,11 +327,11 @@ const getAllBookings = async (req, res) => {
  */
 const updateBookingStatus = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { bookingId } = req.params;
     const { status, paymentStatus, actualCheckIn, actualCheckOut } = req.body;
 
     const booking = await prisma.booking.findUnique({
-      where: { id },
+      where: { id: bookingId },
     });
 
     if (!booking) {
@@ -353,7 +353,7 @@ const updateBookingStatus = async (req, res) => {
     }
 
     const updatedBooking = await prisma.booking.update({
-      where: { id },
+      where: { id: bookingId },
       data: updateData,
       include: {
         user: { select: { name: true, email: true } },

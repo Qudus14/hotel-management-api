@@ -5,54 +5,71 @@ const prisma = new PrismaClient();
  * 💰 Pay for booking using virtual wallet
  */
 exports.payWithWallet = async (req, res) => {
-  const { bookingId } = req.body;
-  const userId = req.user.id;
+  const { bookingId, idempotencyKey, paymentMethod } = req.body; // ✅ Add paymentMethod
+  const userId = req.user.sub;
+
+  // ✅ Validate payment method
+  const validPaymentMethods = [
+    "CREDIT_CARD",
+    "DEBIT_CARD",
+    "PAYPAL",
+    "BANK_TRANSFER",
+    "CASH",
+    "WALLET",
+  ];
+  if (!paymentMethod || !validPaymentMethods.includes(paymentMethod)) {
+    return res.status(400).json({
+      success: false,
+      message: `Invalid payment method. Choose from: ${validPaymentMethods.join(
+        ", "
+      )}`,
+    });
+  }
+
+  // Check idempotency
+  if (idempotencyKey) {
+    const existing = await prisma.idempotencyKey.findUnique({
+      where: { key: idempotencyKey },
+    });
+    if (existing && existing.status === "COMPLETED") {
+      return res.status(200).json(JSON.parse(existing.response));
+    }
+  }
 
   try {
     const result = await prisma.$transaction(async (tx) => {
-      // Get booking
       const booking = await tx.booking.findUnique({
         where: { id: bookingId },
         include: { room: true },
       });
 
-      if (!booking) {
-        throw new Error("Booking not found");
-      }
-
-      if (booking.paymentStatus === "SUCCESSFUL") {
+      if (!booking) throw new Error("Booking not found");
+      if (booking.userId !== userId)
+        throw new Error("Unauthorized: Not your booking");
+      if (booking.paymentStatus === "SUCCESSFUL")
         throw new Error("Booking already paid");
-      }
+      if (booking.status !== "pending")
+        throw new Error(
+          `Cannot pay for booking with status: ${booking.status}`
+        );
 
-      // Check if user owns this booking
-      if (booking.userId !== userId) {
-        throw new Error("Unauthorized: This is not your booking");
-      }
-
-      // Get user
-      const user = await tx.user.findUnique({
-        where: { id: userId },
-      });
-
+      const user = await tx.user.findUnique({ where: { id: userId } });
       const totalPrice = parseFloat(booking.totalPrice);
 
       if (user.walletBalance < totalPrice) {
         throw new Error(
-          `Insufficient balance. You have ₦${user.walletBalance.toLocaleString()}, need ₦${totalPrice.toLocaleString()}`
+          `Insufficient balance. Need ₦${totalPrice.toLocaleString()}`
         );
       }
 
-      // Calculate new balance
       const oldBalance = user.walletBalance;
       const newBalance = oldBalance - totalPrice;
 
-      // Update user balance
       await tx.user.update({
         where: { id: userId },
         data: { walletBalance: newBalance },
       });
 
-      // Update booking
       const updatedBooking = await tx.booking.update({
         where: { id: bookingId },
         data: {
@@ -61,20 +78,19 @@ exports.payWithWallet = async (req, res) => {
         },
       });
 
-      // Create payment record
+      // ✅ Use the payment method provided by user
       const payment = await tx.payment.create({
         data: {
           amount: totalPrice,
           currency: "NGN",
           status: "SUCCESSFUL",
-          paymentMethod: "WALLET",
+          paymentMethod: paymentMethod, // ✅ Use user's choice
           bookingId: bookingId,
           reference: `PAY-${Date.now()}-${userId.slice(0, 6)}`,
           paidAt: new Date(),
         },
       });
 
-      // Create wallet transaction
       const transaction = await tx.walletTransaction.create({
         data: {
           userId,
@@ -84,7 +100,7 @@ exports.payWithWallet = async (req, res) => {
           balanceAfter: newBalance,
           description: `Payment for booking #${bookingId.slice(0, 8)} - Room ${
             booking.room.roomNumber
-          }`,
+          } via ${paymentMethod}`,
           reference: payment.reference,
           bookingId,
         },
@@ -99,13 +115,26 @@ exports.payWithWallet = async (req, res) => {
       };
     });
 
+    // Store idempotency result
+    if (idempotencyKey) {
+      await prisma.idempotencyKey.create({
+        data: {
+          key: idempotencyKey,
+          status: "COMPLETED",
+          response: JSON.stringify(result),
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        },
+      });
+    }
+
     res.status(200).json({
       success: true,
-      message: "✅ Payment successful!",
+      message: `✅ Payment successful via ${paymentMethod}!`,
       data: {
         bookingId: result.booking.id,
         roomNumber: result.booking.room.roomNumber,
         amountPaid: result.transaction.amount,
+        paymentMethod: paymentMethod,
         oldBalance: result.oldBalance,
         newBalance: result.newBalance,
         transactionRef: result.transaction.reference,
@@ -122,11 +151,16 @@ exports.payWithWallet = async (req, res) => {
       ? 400
       : error.message.includes("already paid")
       ? 400
+      : error.message.includes("Cannot pay")
+      ? 400
       : 500;
 
     res.status(statusCode).json({
       success: false,
-      message: error.message,
+      message:
+        process.env.NODE_ENV === "production" && statusCode === 500
+          ? "Payment processing failed"
+          : error.message,
     });
   }
 };
@@ -136,7 +170,7 @@ exports.payWithWallet = async (req, res) => {
  */
 exports.getWalletInfo = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user.sub;
     const { page = 1, limit = 20 } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
@@ -232,7 +266,7 @@ exports.getWalletInfo = async (req, res) => {
 exports.fundWallet = async (req, res) => {
   try {
     const { amount, description, targetUserId } = req.body;
-    const currentUserId = req.user.id;
+    const currentUserId = req.user.sub;
     const isAdmin = req.user.role === "admin";
 
     // Determine who gets the money
@@ -306,7 +340,7 @@ exports.fundWallet = async (req, res) => {
  */
 exports.claimWelcomeBonus = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user.sub;
 
     // Check if user already claimed bonus
     const existingBonus = await prisma.walletTransaction.findFirst({

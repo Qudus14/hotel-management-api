@@ -195,6 +195,7 @@ enum PaymentMethod {
   PAYPAL
   BANK_TRANSFER
   CASH
+  WALLET
 }
 
 enum TransactionType {
