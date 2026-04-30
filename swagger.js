@@ -8,7 +8,16 @@ const options = {
       title: "Hotel Management API",
       version: "1.0.0",
     },
-    servers: [{ url: "http://localhost:8000/api/v1", description: "Local" }],
+    servers: [
+      {
+        url:
+          process.env.NODE_ENV === "production"
+            ? "https://your-production-domain.com/api/v1"
+            : "http://localhost:8000/api/v1",
+        description:
+          process.env.NODE_ENV === "production" ? "Production" : "Local",
+      },
+    ],
     components: {
       securitySchemes: {
         bearerAuth: {
