@@ -142,9 +142,16 @@ const getBookingById = async (req, res) => {
 const updateBookingById = async (req, res) => {
   try {
     const { bookingId } = req.params;
-    const { status, paymentStatus } = req.body; // Only accept these two fields
+    let { status, paymentStatus } = req.body;
 
-    // Find the booking using UUID or numeric ID
+    // Map frontend values to enum values if needed
+    if (paymentStatus === "completed") {
+      paymentStatus = "SUCCESSFUL";
+    }
+    if (paymentStatus === "pending") {
+      paymentStatus = "PENDING";
+    }
+
     const where = bookingId.includes("-")
       ? { id: bookingId }
       : { bookingId: parseInt(bookingId) };
@@ -158,7 +165,7 @@ const updateBookingById = async (req, res) => {
       return res.status(404).json({ error: "Booking not found" });
     }
 
-    // Validate status transition if status is being updated
+    // Validate status transition
     if (status && status !== existingBooking.status) {
       const validTransitions = {
         pending: ["confirmed", "cancelled"],
