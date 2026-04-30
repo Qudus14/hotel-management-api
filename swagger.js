@@ -12,7 +12,7 @@ const options = {
       {
         url:
           process.env.NODE_ENV === "production"
-            ? "https://your-production-domain.com/api/v1"
+            ? "https://hotel-management-api-px8z.onrender.com"
             : "http://localhost:8000/api/v1",
         description:
           process.env.NODE_ENV === "production" ? "Production" : "Local",
