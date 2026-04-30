@@ -38,7 +38,9 @@ const getDashboardStats = async (req, res) => {
       }),
       prisma.booking.aggregate({
         where: {
-          status: { in: ["checked_in", "checked_out"] },
+          // OLD: status: { in: ["checked_in", "checked_out"] },
+          // NEW: Count revenue for ANY successful payment, regardless of check-in status
+          paymentStatus: "SUCCESSFUL",
           createdAt: {
             gte: new Date(new Date().setDate(new Date().getDate() - 30)),
           },
@@ -99,6 +101,7 @@ const getAllUsers = async (req, res) => {
           email: true,
           phoneNumber: true,
           address: true,
+          walletBalance: true,
           profileImage: true,
           role: true,
           createdAt: true,
@@ -397,7 +400,7 @@ const getRevenueReport = async (req, res) => {
     const bookings = await prisma.booking.findMany({
       where: {
         ...dateFilter,
-        status: { in: ["checked_in", "checked_out"] },
+        paymentStatus: "SUCCESSFUL",
       },
       select: {
         totalPrice: true,
@@ -415,12 +418,15 @@ const getRevenueReport = async (req, res) => {
       if (!acc[month]) {
         acc[month] = { revenue: 0, count: 0 };
       }
-      acc[month].revenue += booking.totalPrice;
+      acc[month].revenue += Number(booking.totalPrice);
       acc[month].count += 1;
       return acc;
     }, {});
 
-    const totalRevenue = bookings.reduce((sum, b) => sum + b.totalPrice, 0);
+    const totalRevenue = bookings.reduce(
+      (sum, b) => sum + Number(b.totalPrice),
+      0,
+    );
 
     res.status(200).json({
       success: true,

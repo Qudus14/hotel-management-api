@@ -21,7 +21,7 @@ exports.payWithWallet = async (req, res) => {
     return res.status(400).json({
       success: false,
       message: `Invalid payment method. Choose from: ${validPaymentMethods.join(
-        ", "
+        ", ",
       )}`,
     });
   }
@@ -50,7 +50,7 @@ exports.payWithWallet = async (req, res) => {
         throw new Error("Booking already paid");
       if (booking.status !== "pending")
         throw new Error(
-          `Cannot pay for booking with status: ${booking.status}`
+          `Cannot pay for booking with status: ${booking.status}`,
         );
 
       const user = await tx.user.findUnique({ where: { id: userId } });
@@ -58,7 +58,7 @@ exports.payWithWallet = async (req, res) => {
 
       if (user.walletBalance < totalPrice) {
         throw new Error(
-          `Insufficient balance. Need ₦${totalPrice.toLocaleString()}`
+          `Insufficient balance. Need ₦${totalPrice.toLocaleString()}`,
         );
       }
 
@@ -76,15 +76,18 @@ exports.payWithWallet = async (req, res) => {
           paymentStatus: "SUCCESSFUL",
           status: "confirmed",
         },
+        include: { room: true },
       });
 
       // ✅ Use the payment method provided by user
       const payment = await tx.payment.create({
         data: {
-          amount: totalPrice,
+          // Convert to string to ensure Prisma Decimal handles it correctly
+          amount: totalPrice.toString(),
           currency: "NGN",
           status: "SUCCESSFUL",
-          paymentMethod: paymentMethod, // ✅ Use user's choice
+          // Match the Enum exactly as defined in your schema
+          paymentMethod: "WALLET",
           bookingId: bookingId,
           reference: `PAY-${Date.now()}-${userId.slice(0, 6)}`,
           paidAt: new Date(),
@@ -146,14 +149,14 @@ exports.payWithWallet = async (req, res) => {
     const statusCode = error.message.includes("not found")
       ? 404
       : error.message.includes("Unauthorized")
-      ? 403
-      : error.message.includes("Insufficient")
-      ? 400
-      : error.message.includes("already paid")
-      ? 400
-      : error.message.includes("Cannot pay")
-      ? 400
-      : 500;
+        ? 403
+        : error.message.includes("Insufficient")
+          ? 400
+          : error.message.includes("already paid")
+            ? 400
+            : error.message.includes("Cannot pay")
+              ? 400
+              : 500;
 
     res.status(statusCode).json({
       success: false,
