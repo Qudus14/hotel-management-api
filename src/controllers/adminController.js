@@ -175,19 +175,24 @@ const getUserById = async (req, res) => {
  */
 const updateUser = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { userId } = req.params;
     const { name, email, phoneNumber, address, role } = req.body;
 
-    // Check if user exists
+    // 1. Basic validation: Ensure we actually have an ID to query
+    if (!userId) {
+      return res.status(400).json({ error: "User ID is required" });
+    }
+
+    // 2. Check if user exists
     const existingUser = await prisma.user.findUnique({
-      where: { id },
+      where: { id: userId },
     });
 
     if (!existingUser) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    // Check if email is already taken by another user
+    // 3. Email uniqueness check (only if email is being changed)
     if (email && email !== existingUser.email) {
       const emailExists = await prisma.user.findUnique({
         where: { email },
@@ -198,15 +203,21 @@ const updateUser = async (req, res) => {
       }
     }
 
+    // 4. Build dynamic update object
+    // Using Object.entries or a simple spread with checks is cleaner
+    const updateData = {};
+    if (name) updateData.name = name;
+    if (email) updateData.email = email;
+    if (phoneNumber !== undefined) updateData.phoneNumber = phoneNumber;
+    if (address !== undefined) updateData.address = address;
+
+    // Ensure role matches your Prisma Enum (lowercase 'admin', 'customer', 'staff')
+    if (role) updateData.role = role.toLowerCase();
+
+    // 5. Execute Update
     const updatedUser = await prisma.user.update({
-      where: { id },
-      data: {
-        name,
-        email,
-        phoneNumber,
-        address,
-        role,
-      },
+      where: { id: userId },
+      data: updateData,
       select: {
         id: true,
         name: true,
@@ -214,6 +225,7 @@ const updateUser = async (req, res) => {
         phoneNumber: true,
         address: true,
         role: true,
+        walletBalance: true, // Useful to return for the Admin UI
         updatedAt: true,
       },
     });
@@ -225,6 +237,12 @@ const updateUser = async (req, res) => {
     });
   } catch (error) {
     console.error("Update user error:", error);
+
+    // Handle Prisma specific errors (like invalid Enum values)
+    if (error.code === "P2002") {
+      return res.status(400).json({ error: "Unique constraint failed" });
+    }
+
     res.status(500).json({ error: "Failed to update user" });
   }
 };
@@ -234,10 +252,10 @@ const updateUser = async (req, res) => {
  */
 const deleteUser = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { id: UserId } = req.params;
 
     const user = await prisma.user.findUnique({
-      where: { id },
+      where: { id: UserId },
       include: { bookings: true },
     });
 
@@ -260,7 +278,7 @@ const deleteUser = async (req, res) => {
 
     // Delete user (cascade will handle bookings if set in schema)
     await prisma.user.delete({
-      where: { id },
+      where: { id: UserId },
     });
 
     res.status(200).json({

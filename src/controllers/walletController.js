@@ -268,73 +268,78 @@ exports.getWalletInfo = async (req, res) => {
  */
 exports.fundWallet = async (req, res) => {
   try {
-    const { amount, description, targetUserId } = req.body;
-    const currentUserId = req.user.sub;
+    // 1. Get userId from URL params, and details from the body
+    const { userId } = req.params;
+    const { amount, description, action } = req.body;
+
+    const currentUserId = req.user.sub; // The admin doing the funding
     const isAdmin = req.user.role === "admin";
 
-    // Determine who gets the money
-    const recipientId = isAdmin && targetUserId ? targetUserId : currentUserId;
+    // Convert amount to absolute number
+    const parsedAmount = Math.abs(parseFloat(amount));
 
-    if (!amount || amount <= 0) {
+    if (!parsedAmount || parsedAmount <= 0) {
       return res.status(400).json({
         success: false,
-        message: "Amount must be greater than 0",
+        message: "Invalid amount provided",
       });
     }
 
     const result = await prisma.$transaction(async (tx) => {
+      // Find the user being funded
       const recipient = await tx.user.findUnique({
-        where: { id: recipientId },
+        where: { id: userId },
       });
 
       if (!recipient) {
-        throw new Error("Recipient not found");
+        throw new Error("User not found");
       }
 
       const oldBalance = recipient.walletBalance;
-      const newBalance = oldBalance + parseFloat(amount);
+      const isDebit = action === "debit";
 
+      if (isDebit && oldBalance < parsedAmount) {
+        throw new Error("Insufficient balance for this debit");
+      }
+
+      const newBalance = isDebit
+        ? oldBalance - parsedAmount
+        : oldBalance + parsedAmount;
+
+      // Update the user
       await tx.user.update({
-        where: { id: recipientId },
+        where: { id: userId },
         data: { walletBalance: newBalance },
       });
 
+      // Create ledger entry
       const transaction = await tx.walletTransaction.create({
         data: {
-          userId: recipientId,
-          amount: parseFloat(amount),
-          type: "CREDIT",
+          userId: userId,
+          amount: isDebit ? -parsedAmount : parsedAmount,
+          type: isDebit ? "DEBIT" : "CREDIT",
           balanceBefore: oldBalance,
           balanceAfter: newBalance,
-          description: description || "Wallet funding",
-          reference: `FUND-${Date.now()}-${recipientId.slice(0, 6)}`,
-          fundedBy: isAdmin && targetUserId ? currentUserId : null,
-          fundingReason: description,
+          description:
+            description ||
+            (isDebit ? "Admin Adjustment (Debit)" : "Admin Funding"),
+          reference: `${isDebit ? "DEBT" : "FUND"}-${Date.now()}`,
+          fundedBy: currentUserId, // Track which admin performed the action
         },
       });
 
-      return { transaction, recipient, oldBalance, newBalance };
+      return { recipient, newBalance, isDebit };
     });
 
     res.status(200).json({
       success: true,
-      message: `✅ Successfully added ₦${amount.toLocaleString()} to ${
-        result.recipient.name
-      }'s wallet`,
+      message: `Successfully ${result.isDebit ? "debited" : "funded"} ${result.recipient.name}`,
       data: {
-        recipient: result.recipient.name,
-        amountAdded: parseFloat(amount),
-        oldBalance: result.oldBalance,
         newBalance: result.newBalance,
-        reference: result.transaction.reference,
       },
     });
   } catch (error) {
-    console.error("Fund wallet error:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    res.status(400).json({ success: false, message: error.message });
   }
 };
 

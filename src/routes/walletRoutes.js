@@ -1,7 +1,6 @@
 // walletRoutes.js
 const express = require("express");
 const router = express.Router();
-const { authenticate } = require("../middleware/auth");
 const {
   payWithWallet,
   getWalletInfo,
@@ -9,6 +8,7 @@ const {
   getTransactionByReference,
   claimWelcomeBonus,
 } = require("../controllers/walletController");
+const { authenticate, restrictTo } = require("../middleware/auth");
 
 router.use(authenticate);
 
@@ -58,34 +58,40 @@ router.get("/transactions/:reference", getTransactionByReference);
 
 /**
  * @openapi
- * /wallet/fund:
+ * /wallet/fund/{userId}:
  *   post:
  *     tags: [Wallet]
- *     summary: Fund wallet
+ *     summary: Admin funding or debiting of a user wallet
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required: [amount]
+ *             required: [amount, action]
  *             properties:
  *               amount:
  *                 type: number
- *                 minimum: 0.01
+ *               action:
+ *                 type: string
+ *                 enum: [credit, debit]
+ *               description:
+ *                 type: string
  *     responses:
  *       200:
- *         description: Wallet funded successfully
- *       400:
- *         description: Invalid amount
- *       401:
- *         description: Unauthorized
- *       500:
- *         description: Internal server error
+ *         description: Wallet updated successfully
+ *       403:
+ *         description: Forbidden - Admin only
  */
-router.post("/fund", fundWallet);
+router.post("/fund/:userId", authenticate, restrictTo("admin"), fundWallet);
 
 /**
  * @openapi

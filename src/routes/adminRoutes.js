@@ -146,14 +146,6 @@ router.get("/users", getAllUsers);
  *           schema:
  *             type: object
  *             properties:
- *               name:
- *                 type: string
- *               email:
- *                 type: string
- *               phoneNumber:
- *                 type: string
- *               address:
- *                 type: string
  *               role:
  *                 type: string
  *                 enum: [admin, staff, customer]
