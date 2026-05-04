@@ -6,14 +6,17 @@ const {
   createRoom,
   updateRoomById,
   deleteRoomById,
-} = require("../controllers/roomController");
-const validateSchema = require("../middleware/validate");
-const { roomSchema, updateRoomSchema } = require("../model/roomsModel");
+} = require("../../controllers/hotel.controller/roomController");
+const validateSchema = require("../../middleware/validate");
+const {
+  roomSchema,
+  updateRoomSchema,
+} = require("../../model/hotel.model/roomsModel");
 const router = express.Router();
 
 /**
  * @openapi
- * /rooms/getAllRoom:
+ * /hotel/rooms/getAllRoom:
  *   get:
  *     tags: [Rooms]
  *     summary: Get all rooms
@@ -36,7 +39,7 @@ router.get("/getAllRoom", getAllRooms);
 
 /**
  * @openapi
- * /rooms/getAllRoom/{roomId}:
+ * /hotel/rooms/getAllRoom/{roomId}:
  *   get:
  *     tags: [Rooms]
  *     summary: Get room by ID
@@ -58,7 +61,7 @@ router.get("/getAllRoom/:roomId", getRoomById);
 
 /**
  * @openapi
- * /rooms/createRoom:
+ * /hotel/rooms/createRoom:
  *   post:
  *     tags: [Rooms]
  *     summary: Create a new room
@@ -112,7 +115,7 @@ router.post("/createRoom", validateSchema(roomSchema), createRoom);
 
 /**
  * @openapi
- * /rooms/updateRoom/{roomId}:
+ * /hotel/rooms/updateRoom/{roomId}:
  *   patch:
  *     tags: [Rooms]
  *     summary: Update a room
@@ -165,11 +168,11 @@ router.post("/createRoom", validateSchema(roomSchema), createRoom);
 router.patch(
   "/updateRoom/:roomId",
   validateSchema(updateRoomSchema),
-  updateRoomById
+  updateRoomById,
 );
 /**
  * @openapi
- * /rooms/removeRoom/{roomId}:
+ * /hotel/rooms/removeRoom/{roomId}:
  *   delete:
  *     tags: [Rooms]
  *     summary: Delete a room

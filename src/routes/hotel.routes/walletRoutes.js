@@ -7,14 +7,14 @@ const {
   fundWallet,
   getTransactionByReference,
   claimWelcomeBonus,
-} = require("../controllers/walletController");
-const { authenticate, restrictTo } = require("../middleware/auth");
+} = require("../../controllers/hotel.controller/walletController");
+const { authenticate, restrictTo } = require("../../middleware/auth");
 
 router.use(authenticate);
 
 /**
  * @openapi
- * /wallet/info:
+ * /hotel/wallet/info:
  *   get:
  *     tags: [Wallet]
  *     summary: Get wallet balance and info
@@ -32,7 +32,7 @@ router.get("/info", getWalletInfo);
 
 /**
  * @openapi
- * /wallet/transactions/{reference}:
+ * /hotel/wallet/transactions/{reference}:
  *   get:
  *     tags: [Wallet]
  *     summary: Get transaction by reference
@@ -58,7 +58,7 @@ router.get("/transactions/:reference", getTransactionByReference);
 
 /**
  * @openapi
- * /wallet/fund/{userId}:
+ * /hotel/wallet/fund/{userId}:
  *   post:
  *     tags: [Wallet]
  *     summary: Admin funding or debiting of a user wallet
@@ -95,7 +95,7 @@ router.post("/fund/:userId", authenticate, restrictTo("admin"), fundWallet);
 
 /**
  * @openapi
- * /wallet/pay:
+ * /hotel/wallet/pay:
  *   post:
  *     tags: [Wallet]
  *     summary: Pay for a booking with wallet
@@ -133,7 +133,7 @@ router.post("/pay", payWithWallet);
 
 /**
  * @openapi
- * /wallet/claim-bonus:
+ * /hotel/wallet/claim-bonus:
  *   post:
  *     tags: [Wallet]
  *     summary: Claim one-time welcome bonus

@@ -1,4 +1,4 @@
-const { prisma } = require("../config/db");
+const { prisma } = require("../../config/db");
 
 const createBookings = async (req, res) => {
   try {

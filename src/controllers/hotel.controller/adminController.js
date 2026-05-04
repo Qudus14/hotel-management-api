@@ -1,5 +1,5 @@
 const { PrismaClient } = require("@prisma/client");
-const { prisma } = require("../config/db");
+const { prisma } = require("../../config/db");
 
 /**
  * Get admin dashboard statistics

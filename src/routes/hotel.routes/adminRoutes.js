@@ -1,7 +1,7 @@
 // adminRoutes.js
 const express = require("express");
 const router = express.Router();
-const { authenticate, restrictTo } = require("../middleware/auth");
+const { authenticate, restrictTo } = require("../../middleware/auth");
 const {
   getDashboardStats,
   getAllUsers,
@@ -11,13 +11,13 @@ const {
   getAllBookings,
   updateBookingStatus,
   getRevenueReport,
-} = require("../controllers/adminController");
+} = require("../../controllers/hotel.controller/adminController");
 
 router.use(authenticate, restrictTo("admin"));
 
 /**
  * @openapi
- * /admin/dashboard/stats:
+ * /hotel/admin/dashboard/stats:
  *   get:
  *     tags: [Admin]
  *     summary: Get dashboard statistics
@@ -37,7 +37,7 @@ router.get("/dashboard/stats", getDashboardStats);
 
 /**
  * @openapi
- * /admin/reports/revenue:
+ * /hotel/admin/reports/revenue:
  *   get:
  *     tags: [Admin]
  *     summary: Get revenue report
@@ -73,7 +73,7 @@ router.get("/reports/revenue", getRevenueReport);
 
 /**
  * @openapi
- * /admin/users:
+ * /hotel/admin/users:
  *   get:
  *     tags: [Admin]
  *     summary: Get all users
@@ -106,7 +106,7 @@ router.get("/users", getAllUsers);
 
 /**
  * @openapi
- * /admin/users/{userId}:
+ * /hotel/admin/users/{userId}:
  *   get:
  *     tags: [Admin]
  *     summary: Get user by ID
@@ -193,7 +193,7 @@ router.delete("/users/:userId", deleteUser);
 
 /**
  * @openapi
- * /admin/bookings:
+ * /hotel/admin/bookings:
  *   get:
  *     tags: [Admin]
  *     summary: Get all bookings
@@ -237,7 +237,7 @@ router.get("/bookings", getAllBookings);
 
 /**
  * @openapi
- * /admin/bookings/{bookingId}:
+ * /hotel/admin/bookings/{bookingId}:
  *   patch:
  *     tags: [Admin]
  *     summary: Update booking status

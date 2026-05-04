@@ -23,9 +23,10 @@ model User {
   walletBalance Float               @default(0)
   walletLedger  WalletTransaction[]
 
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  bookings  Booking[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  bookings       Booking[]
+  flightBookings FlightBooking[]
 }
 
 model Room {
@@ -143,7 +144,139 @@ model IdempotencyKey {
   @@index([expiresAt])
 }
 
+model FlightBooking {
+  id String @id @default(uuid())
+
+  // Relations
+  user   User   @relation(fields: [userId], references: [id])
+  userId String
+
+  segments BookingSegment[]
+
+  // Link to Add-Ons (Baggage, Meals)
+  addOns BookingAddOn[]
+
+  totalPrice Decimal             @default(0) @db.Decimal(12, 2)
+  status     FlightBookingStatus @default(BOOKED)
+
+  // For Check-in logic
+  qrCode          String? @db.Text
+  boardingPassUrl String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  seats     Seat[]
+  flight    Flight?  @relation(fields: [flightId], references: [id])
+  flightId  String?
+}
+
+model Seat {
+  id          String  @id @default(uuid())
+  flightId    String // Connects to the Flight model
+  seatNumber  String // E.g., "12A"
+  class       String // E.g., "Economy", "Business", "First"
+  isAvailable Boolean @default(true)
+  price       Decimal @db.Decimal(10, 2)
+
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  flightBooking   FlightBooking?   @relation(fields: [flightBookingId], references: [id])
+  flight          Flight           @relation(fields: [flightId], references: [id])
+  flightBookingId String?
+  bookingSegments BookingSegment[]
+
+  @@unique([flightId, seatNumber])
+}
+
+model Flight {
+  id               String       @id @default(uuid())
+  flightNumber     String       @unique
+  departureAirport String
+  arrivalAirport   String
+  departureTime    DateTime
+  arrivalTime      DateTime
+  price            Decimal      @db.Decimal(10, 2)
+  status           FlightStatus @default(SCHEDULED)
+
+  seats    Seat[] // Relation to Seats
+  bookings FlightBooking[] // Relation to Bookings
+
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  bookingSegments BookingSegment[]
+}
+
+model Airplane {
+  id         String @id @default(uuid())
+  model      String
+  tailNumber String
+  totalSeats Int
+  airline    String
+  capacity   Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model BookingSegment {
+  id              String        @id @default(uuid())
+  flightBookingId String
+  flightBooking   FlightBooking @relation(fields: [flightBookingId], references: [id])
+
+  flightId String
+  flight   Flight @relation(fields: [flightId], references: [id])
+
+  seatId String
+  seat   Seat   @relation(fields: [seatId], references: [id])
+}
+
+model BookingAddOn {
+  id              String        @id @default(uuid())
+  flightBookingId String
+  flightBooking   FlightBooking @relation(fields: [flightBookingId], references: [id])
+
+  addOnId String
+  addOn   AddOn  @relation(fields: [addOnId], references: [id])
+
+  quantity Int @default(1)
+}
+
+model AddOn {
+  id    String    @id @default(uuid())
+  type  AddOnType // Uses your existing Enum
+  name  String // e.g., "Extra 20kg Bag"
+  price Decimal   @db.Decimal(10, 2)
+
+  // This connects back to the join table
+  bookings BookingAddOn[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 // ==================== ENUMS ====================
+enum FlightStatus {
+  SCHEDULED
+  DELAYED
+  BOARDING
+  DEPARTED
+  ARRIVED
+  CANCELLED
+}
+
+enum AddOnType {
+  BAGGAGE
+  MEAL
+  WIFI
+  PRIORITY_BOARDING
+}
+
+enum FlightBookingStatus {
+  BOOKED
+  PAID
+  CANCELLED
+  BOARDED
+}
 
 enum Role {
   admin

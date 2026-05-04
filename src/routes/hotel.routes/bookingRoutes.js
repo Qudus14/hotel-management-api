@@ -1,9 +1,9 @@
 // bookingRoutes.js
 const express = require("express");
 const router = express.Router();
-const { authenticate: protect } = require("../middleware/auth");
-const validateSchema = require("../middleware/validate"); // ✅ Add this
-const { bookingSchema } = require("../model/bookingModel");
+const { authenticate: protect } = require("../../middleware/auth");
+const validateSchema = require("../../middleware/validate"); // ✅ Add this
+const { bookingSchema } = require("../../model/hotel.model/bookingModel");
 const {
   getBookings,
   getBookingById,
@@ -11,13 +11,13 @@ const {
   updateBookingById,
   deleteBooking,
   cancelBooking,
-} = require("../controllers/bookingController");
+} = require("../../controllers/hotel.controller/bookingController");
 
 router.use(protect);
 
 /**
  * @openapi
- * /bookings/getBookings:
+ * /hotel/bookings/getBookings:
  *   get:
  *     tags: [Bookings]
  *     summary: Get all bookings for logged-in user
@@ -44,7 +44,7 @@ router.get("/getBookings", getBookings);
 
 /**
  * @openapi
- * /bookings/createBookings:
+ * /hotel/bookings/createBookings:
  *   post:
  *     tags: [Bookings]
  *     summary: Create a new booking
@@ -141,7 +141,7 @@ router.post("/createBookings", validateSchema(bookingSchema), createBookings);
 
 /**
  * @openapi
- * /bookings/{bookingId}/getBookingsById:
+ * /hotel/bookings/{bookingId}/getBookingsById:
  *   get:
  *     tags: [Bookings]
  *     summary: Get booking by ID
@@ -167,7 +167,7 @@ router.get("/:bookingId/getBookingsById", getBookingById);
 
 /**
  * @openapi
- * /bookings/{bookingId}/update:
+ * /hotel/bookings/{bookingId}/update:
  *   patch:
  *     tags: [Bookings]
  *     summary: Update a booking
@@ -236,7 +236,7 @@ router.patch("/:bookingId/update", updateBookingById);
 
 /**
  * @openapi
- * /bookings/{bookingId}/cancel:
+ * /hotel/bookings/{bookingId}/cancel:
  *   patch:
  *     tags: [Bookings]
  *     summary: Cancel a booking
@@ -276,7 +276,7 @@ router.patch("/:bookingId/cancel", cancelBooking);
 
 /**
  * @openapi
- * /bookings/{bookingId}/removeBooking:
+ * /hotel/bookings/{bookingId}/removeBooking:
  *   delete:
  *     tags: [Bookings]
  *     summary: Delete a booking (admin only)

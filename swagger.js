@@ -5,7 +5,7 @@ const options = {
   definition: {
     openapi: "3.0.0",
     info: {
-      title: "Hotel Management API",
+      title: "Travel Safe API",
       version: "1.0.0",
     },
     servers: [
@@ -42,7 +42,7 @@ const options = {
       },
     },
   },
-  apis: [path.join(__dirname, "./src/routes/*.js")],
+  apis: [path.join(__dirname, "./src/routes/**/*.js")],
 };
 
 module.exports = swaggerJsdoc(options);

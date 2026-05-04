@@ -9,6 +9,7 @@ const { connectDB, disconnectDB } = require("./src/config/db");
 const swaggerUi = require("swagger-ui-express");
 const swaggerSpec = require("./swagger");
 require("dotenv").config();
+require("./src/cron/checkInCron");
 
 // Import rate limiters and throttles
 const {
@@ -42,7 +43,7 @@ app.use(
       includeSubDomains: true,
       preload: true,
     },
-  })
+  }),
 );
 
 // Compression
@@ -59,7 +60,7 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
     maxAge: 86400, // 24 hours
-  })
+  }),
 );
 
 app.use(express.json({ limit: "5mb" }));
@@ -71,7 +72,7 @@ app.set("trust proxy", 1);
 // ==================== Swagger UI Setup ====================
 const swaggerUiOptions = {
   customCss: ".swagger-ui .topbar { display: none }",
-  customSiteTitle: "Hotel Management API Documentation",
+  customSiteTitle: "Travel Safe API Documentation",
   swaggerOptions: {
     persistAuthorization: true,
     docExpansion: "list",
@@ -84,7 +85,7 @@ const swaggerUiOptions = {
 app.use(
   "/api-docs",
   swaggerUi.serve,
-  swaggerUi.setup(swaggerSpec, swaggerUiOptions) // Use swaggerSpec, not swaggerDocument
+  swaggerUi.setup(swaggerSpec, swaggerUiOptions), // Use swaggerSpec, not swaggerDocument
 );
 
 // Optional: Serve raw swagger.json
@@ -151,14 +152,12 @@ app.use("/public", express.static(path.join(__dirname, "public")));
  *                   type: string
  *                 documentation:
  *                   type: string
- *                 version:
- *                   type: string
  *                 status:
  *                   type: string
  */
 app.get("/", (req, res) => {
   res.json({
-    message: "Welcome to the Hotel Management API",
+    message: "Welcome to the Travel Safe API",
     documentation: "/api-docs",
     version: "1.0.0",
     status: "running",
@@ -191,7 +190,7 @@ const server = app.listen(PORT, () => {
   console.log(
     `\n🚀 Server ${
       process.env.INSTANCE_ID || "default"
-    } running on port ${PORT}`
+    } running on port ${PORT}`,
   );
   console.log(`📊 Rate limiting enabled`);
   console.log(`🔄 Throttling enabled`);
@@ -213,7 +212,7 @@ const gracefulShutdown = async (signal) => {
   // Force shutdown after 30 seconds
   setTimeout(() => {
     console.error(
-      "Could not close connections in time, forcefully shutting down"
+      "Could not close connections in time, forcefully shutting down",
     );
     process.exit(1);
   }, 30000);
