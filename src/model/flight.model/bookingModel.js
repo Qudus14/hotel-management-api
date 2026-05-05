@@ -1,33 +1,44 @@
-const bookingModel = {
-  bookingId: {
-    type: String,
-    required: true,
+const flightBookingSchema = {
+  type: "object",
+  properties: {
+    segments: {
+      type: "array",
+      minItems: 1,
+      items: {
+        type: "object",
+        required: ["flightId", "seatId"],
+        properties: {
+          flightId: { type: "string", format: "uuid" },
+          seatId: { type: "string", format: "uuid" },
+        },
+        additionalProperties: false,
+      },
+    },
+    addOnIds: {
+      type: "array",
+      items: { type: "string", format: "uuid" },
+      default: [],
+    },
+    cartId: {
+      type: "string",
+      format: "uuid",
+      nullable: true,
+    },
   },
-  userId: {
-    type: String,
-    required: true,
-  },
-  flightId: {
-    type: String,
-    required: true,
-  },
-  seatId: {
-    type: String,
-    required: true,
-  },
-  status: {
-    type: String,
-    enum: ["confirmed", "cancelled", "boarded"],
-    default: "confirmed",
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now,
-  },
+  required: ["segments"],
+  additionalProperties: false,
 };
 
-module.exports = { bookingModel };
+const updateFlightBookingSchema = {
+  type: "object",
+  properties: {
+    status: {
+      type: "string",
+      enum: ["BOOKED", "PAID", "CANCELLED", "BOARDED"],
+    },
+  },
+  required: ["status"],
+  additionalProperties: false,
+};
+
+module.exports = { flightBookingSchema, updateFlightBookingSchema };

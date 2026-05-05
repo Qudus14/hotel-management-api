@@ -8,6 +8,7 @@ const walletRoutes = require("../routes/hotel.routes/walletRoutes");
 const flightAirplaneRoutes = require("../routes/flight.routes/airplaneRoutes");
 const flightBookingRoutes = require("../routes/flight.routes/bookingRoutes");
 const flightTripRoutes = require("../routes/flight.routes/tripRoutes");
+const attractionRoutes = require("../routes/attraction.routes/attractionRoutes");
 const { authenticate: protect } = require("../middleware/auth");
 
 router.use("/auth", authRoutes);
@@ -18,6 +19,7 @@ router.use("/hotel/bookings", protect, bookingRoutes);
 router.use("/hotel/admin", protect, adminRoutes);
 router.use("/flight/airplanes", protect, flightAirplaneRoutes);
 router.use("/flight/bookings", protect, flightBookingRoutes);
+router.use("/attractions", protect, attractionRoutes);
 router.use("/flight/trip", protect, flightTripRoutes);
 
 module.exports = router;

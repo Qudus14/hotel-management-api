@@ -1,32 +1,179 @@
 const express = require("express");
 const router = express.Router();
-
 const { authenticate, restrictTo } = require("../../middleware/auth");
+const validateSchema = require("../../middleware/validate");
 const {
-  updateFlightBookingByStatus,
-  deleteFlightBookingById,
-  getFlightBookingById,
-  getAllFlightBookings,
+  flightBookingSchema,
+  updateFlightBookingSchema,
+} = require("../../model/flight.model/bookingModel");
+const {
   createFlightBooking,
+  getAllFlightBookings,
+  getFlightBookingById,
+  updateFlightBookingByStatus,
   cancelFlightBookingById,
+  deleteFlightBookingById,
 } = require("../../controllers/flight.controller/bookingController");
 const {
   getAllAddOns,
   createAddOn,
 } = require("../../controllers/flight.controller/addOnController");
 
-// Global middleware for these routes
 router.use(authenticate);
 
 /**
  * @openapi
- * /flight/bookings/createFlightBooking:
+ * components:
+ *   schemas:
+ *     FlightSegmentInput:
+ *       type: object
+ *       required: [flightId, seatId]
+ *       properties:
+ *         flightId:
+ *           type: string
+ *           format: uuid
+ *           example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+ *         seatId:
+ *           type: string
+ *           format: uuid
+ *           example: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+ *
+ *     FlightBookingResponse:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *         userId:
+ *           type: string
+ *           format: uuid
+ *         status:
+ *           type: string
+ *           enum: [BOOKED, PAID, CANCELLED, BOARDED]
+ *         totalPrice:
+ *           type: number
+ *           example: 185000
+ *         qrCode:
+ *           type: string
+ *           nullable: true
+ *           description: Base64 QR boarding pass (generated when status becomes PAID)
+ *         segments:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               flight:
+ *                 type: object
+ *                 properties:
+ *                   flightNumber:
+ *                     type: string
+ *                   departureAirport:
+ *                     type: string
+ *                   arrivalAirport:
+ *                     type: string
+ *                   departureTime:
+ *                     type: string
+ *                     format: date-time
+ *                   arrivalTime:
+ *                     type: string
+ *                     format: date-time
+ *               seat:
+ *                 type: object
+ *                 properties:
+ *                   seatNumber:
+ *                     type: string
+ *                   class:
+ *                     type: string
+ *                   price:
+ *                     type: number
+ *         addOns:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               addOn:
+ *                 type: object
+ *                 properties:
+ *                   name:
+ *                     type: string
+ *                   type:
+ *                     type: string
+ *                   price:
+ *                     type: number
+ *
+ *     FlightUnifiedSummary:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *         referenceCode:
+ *           type: string
+ *           example: FLT-M5X3K-AB12
+ *         bookingStatus:
+ *           type: string
+ *           example: PENDING_PAYMENT
+ *         pricing:
+ *           type: object
+ *           properties:
+ *             subtotal:
+ *               type: number
+ *             tax:
+ *               type: number
+ *               description: 7.5% VAT
+ *             serviceFee:
+ *               type: number
+ *               description: 2% service fee
+ *             totalPrice:
+ *               type: number
+ *             currency:
+ *               type: string
+ *               example: NGN
+ */
+
+// ─────────────────────────────────────────────
+// FLIGHT BOOKING ROUTES
+// ─────────────────────────────────────────────
+
+/**
+ * @openapi
+ * /flight/bookings:
+ *   get:
+ *     tags: [Flight Bookings]
+ *     summary: Get all flight bookings (admin sees all, customers see own)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *     responses:
+ *       200:
+ *         description: Bookings retrieved successfully
+ *       401:
+ *         description: Unauthorized
+ */
+router.get("/", getAllFlightBookings);
+
+/**
+ * @openapi
+ * /flight/bookings:
  *   post:
  *     tags: [Flight Bookings]
- *     summary: Create a new flight booking (Supports Multi-City & Add-Ons)
+ *     summary: Book a flight (single or multi-city with add-ons)
  *     description: |
- *       Allows a user to book multiple flight legs (segments) in one transaction.
- *       Includes optional add-ons like baggage and meals.
+ *       Books one or more flight legs in a single atomic transaction.
+ *       - Seats are validated and locked immediately
+ *       - A **UnifiedBooking** entry is created automatically for payment and cancellation tracking
+ *       - Pricing = seat prices + add-ons + 7.5% VAT + 2% service fee
+ *       - `userId` is taken from the JWT token — do **not** send it in the body
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -37,58 +184,61 @@ router.use(authenticate);
  *             type: object
  *             required: [segments]
  *             properties:
- *               userId:
- *                 type: string
- *                 format: uuid
- *                 description: UUID of the user making the booking.
  *               segments:
  *                 type: array
  *                 minItems: 1
- *                 description: Array of flight legs (e.g., Outbound and Return).
+ *                 description: Each item is one flight leg. Send 2 for a return trip.
  *                 items:
- *                   type: object
- *                   properties:
- *                     flightId:
- *                       type: string
- *                       format: uuid
- *                     seatId:
- *                       type: string
- *                       format: uuid
+ *                   $ref: '#/components/schemas/FlightSegmentInput'
  *               addOnIds:
  *                 type: array
- *                 description: List of UUIDs from the AddOn table (Baggage, Meals, etc.).
+ *                 description: Optional add-on UUIDs (baggage, meals, etc.)
  *                 items:
  *                   type: string
  *                   format: uuid
+ *                 example: []
+ *               cartId:
+ *                 type: string
+ *                 format: uuid
+ *                 nullable: true
+ *                 description: Include if booking came from cart checkout
+ *           examples:
+ *             one_way:
+ *               summary: One-way flight
+ *               value:
+ *                 segments:
+ *                   - flightId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+ *                     seatId: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+ *                 addOnIds: []
+ *             return_trip:
+ *               summary: Return trip with baggage
+ *               value:
+ *                 segments:
+ *                   - flightId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+ *                     seatId: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+ *                   - flightId: "c3d4e5f6-a7b8-9012-cdef-123456789012"
+ *                     seatId: "d4e5f6a7-b8c9-0123-defa-234567890123"
+ *                 addOnIds:
+ *                   - "e5f6a7b8-c9d0-1234-efab-345678901234"
  *     responses:
  *       201:
- *         description: Trip booked successfully.
+ *         description: Flight booked successfully
  *       400:
- *         description: Invalid input or seat already taken.
+ *         description: Seat taken, flight cancelled, or add-on not found
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
  */
-router.post("/createFlightBooking", createFlightBooking);
+router.post("/", validateSchema(flightBookingSchema), createFlightBooking);
 
 /**
  * @openapi
- * /flight/bookings/getAllFlightBookings:
+ * /flight/bookings/{bookingId}:
  *   get:
  *     tags: [Flight Bookings]
- *     summary: Get all flight bookings
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: A list of all flight bookings.
- */
-router.get("/getAllFlightBookings", getAllFlightBookings);
-
-/**
- * @openapi
- * /flight/bookings/getFlightBookingById/{bookingId}:
- *   get:
- *     tags: [Flight Bookings]
- *     summary: Get detailed booking info
- *     description: Returns a booking with its segments, flight details, and selected add-ons.
+ *     summary: Get flight booking by ID
+ *     description: Returns full booking with segments, seat details, and add-ons. Customers can only view their own bookings.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -100,19 +250,29 @@ router.get("/getAllFlightBookings", getAllFlightBookings);
  *           format: uuid
  *     responses:
  *       200:
- *         description: Booking details retrieved successfully.
+ *         description: Booking retrieved successfully
+ *       403:
+ *         description: Access denied
  *       404:
- *         description: Booking not found.
+ *         description: Booking not found
+ *       401:
+ *         description: Unauthorized
  */
-router.get("/getFlightBookingById/:bookingId", getFlightBookingById);
+router.get("/:bookingId", getFlightBookingById);
 
 /**
  * @openapi
- * /flight/bookings/updateFlightBookingStatus/{bookingId}:
+ * /flight/bookings/{bookingId}/status:
  *   patch:
  *     tags: [Flight Bookings]
- *     summary: Update booking status (Admin/Payment Gateway)
- *     description: Updates the status. If updated to 'PAID' or 'BOARDED', a QR boarding pass is generated.
+ *     summary: Update flight booking status (admin only)
+ *     description: |
+ *       Valid transitions:
+ *       - `BOOKED` → `PAID` (generates QR boarding pass), `CANCELLED`
+ *       - `PAID` → `BOARDED`, `CANCELLED`
+ *       - `BOARDED` and `CANCELLED` are terminal states
+ *
+ *       When status becomes **PAID**, a Base64 QR code boarding pass is auto-generated and stored.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -136,21 +296,34 @@ router.get("/getFlightBookingById/:bookingId", getFlightBookingById);
  *                 example: PAID
  *     responses:
  *       200:
- *         description: Status updated. QR code generated if applicable.
+ *         description: Status updated. QR code included if status is PAID.
+ *       400:
+ *         description: Invalid status transition
+ *       403:
+ *         description: Admin access required
+ *       404:
+ *         description: Booking not found
+ *       401:
+ *         description: Unauthorized
  */
 router.patch(
-  "/updateFlightBookingStatus/:bookingId",
+  "/:bookingId/status",
   restrictTo("admin"),
+  validateSchema(updateFlightBookingSchema),
   updateFlightBookingByStatus,
 );
 
 /**
  * @openapi
- * /flight/bookings/cancelFlightBooking/{bookingId}:
- *   put:
+ * /flight/bookings/{bookingId}/cancel:
+ *   patch:
  *     tags: [Flight Bookings]
- *     summary: Cancel a flight booking
- *     description: Cancels the entire trip and releases all associated seats back to 'available'.
+ *     summary: Cancel a flight booking and release all seats
+ *     description: |
+ *       Cancels the booking and releases all locked seats back to available.
+ *       - Customers can only cancel their own bookings
+ *       - Cannot cancel already-cancelled or boarded flights
+ *       - For refunds, use the unified cancel endpoint (`/hotel/bookings/unified/:id/cancel`)
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -162,16 +335,24 @@ router.patch(
  *           format: uuid
  *     responses:
  *       200:
- *         description: Booking cancelled and seats released.
+ *         description: Booking cancelled and seats released
+ *       400:
+ *         description: Already cancelled or boarded
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: Booking not found
+ *       401:
+ *         description: Unauthorized
  */
-router.put("/cancelFlightBooking/:bookingId", cancelFlightBookingById);
+router.patch("/:bookingId/cancel", cancelFlightBookingById);
 
 /**
  * @openapi
- * /flight/bookings/deleteFlightBooking/{bookingId}:
+ * /flight/bookings/{bookingId}:
  *   delete:
  *     tags: [Flight Bookings]
- *     summary: Hard delete a booking record
+ *     summary: Hard delete a flight booking (admin only)
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -183,20 +364,40 @@ router.put("/cancelFlightBooking/:bookingId", cancelFlightBookingById);
  *           format: uuid
  *     responses:
  *       200:
- *         description: Booking deleted successfully.
+ *         description: Booking deleted
+ *       404:
+ *         description: Booking not found
+ *       403:
+ *         description: Admin access required
+ *       401:
+ *         description: Unauthorized
  */
-router.delete(
-  "/deleteFlightBooking/:bookingId",
-  restrictTo("admin"),
-  deleteFlightBookingById,
-);
+router.delete("/:bookingId", restrictTo("admin"), deleteFlightBookingById);
+
+// ─────────────────────────────────────────────
+// ADD-ON ROUTES
+// ─────────────────────────────────────────────
 
 /**
  * @openapi
- * /flight/bookings/addOns:
+ * /flight/bookings/add-ons:
+ *   get:
+ *     tags: [Flight Add-Ons]
+ *     summary: Get all available flight add-ons
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of add-ons
+ */
+router.get("/add-ons", getAllAddOns);
+
+/**
+ * @openapi
+ * /flight/bookings/add-ons:
  *   post:
- *     tags: [Flight Bookings]
- *     summary: Create a new Add-On (Baggage/Meal)
+ *     tags: [Flight Add-Ons]
+ *     summary: Create a new add-on (admin only)
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -209,29 +410,19 @@ router.delete(
  *             properties:
  *               type:
  *                 type: string
- *                 enum: [BAGGAGE, MEAL, WIFI, LOUNGE]
+ *                 enum: [BAGGAGE, MEAL, WIFI, PRIORITY_BOARDING]
  *               name:
  *                 type: string
+ *                 example: "Extra 23kg Baggage"
  *               price:
  *                 type: number
+ *                 example: 15000
  *     responses:
  *       201:
- *         description: Add-On created
+ *         description: Add-on created
+ *       403:
+ *         description: Admin access required
  */
-router.post("/addOns", restrictTo("admin"), createAddOn);
-
-/**
- * @openapi
- * /flight/bookings/getAllAddOns:
- *   get:
- *     tags: [Flight Bookings]
- *     summary: Get all available add-ons
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: List of add-ons
- */
-router.get("/getAllAddOns", getAllAddOns);
+router.post("/add-ons", restrictTo("admin"), createAddOn);
 
 module.exports = router;

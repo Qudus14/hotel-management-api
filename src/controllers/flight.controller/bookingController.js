@@ -1,216 +1,433 @@
 const { prisma } = require("../../config/db");
 const { generateBoardingQR } = require("../../utils/qrGenerator");
 
+const generateReferenceCode = (serviceType) => {
+  const prefix = { HOTEL: "HTL", FLIGHT: "FLT", ATTRACTION: "ATR", CAR: "CAR" }[
+    serviceType
+  ];
+  const timestamp = Date.now().toString(36).toUpperCase();
+  const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+  return `${prefix}-${timestamp}-${random}`;
+};
+
+// ==================== CREATE FLIGHT BOOKING ====================
 const createFlightBooking = async (req, res) => {
   try {
-    const { userId, segments, addOnIds } = req.body;
-    // Expecting segments: [{ flightId, seatId }, { flightId, seatId }]
-    // Expecting addOnIds: ["uuid1", "uuid2"]
+    const userId = req.user.sub; // FIX: from JWT, NOT req.body
+    const { segments, addOnIds = [], cartId } = req.body;
 
     const result = await prisma.$transaction(async (tx) => {
-      let calculatedTotalPrice = 0;
+      let subtotal = 0;
 
-      // 1. Validate Seats and calculate price for all legs/segments
+      // 1. Validate every seat and accumulate price
       for (const segment of segments) {
+        const flight = await tx.flight.findUnique({
+          where: { id: segment.flightId },
+        });
+        if (!flight) throw new Error(`Flight ${segment.flightId} not found`);
+        if (flight.status === "CANCELLED")
+          throw new Error(`Flight ${flight.flightNumber} is cancelled`);
+
         const seat = await tx.seat.findUnique({
           where: { id: segment.seatId },
         });
-        if (!seat || !seat.isAvailable) {
+        if (!seat) throw new Error(`Seat ${segment.seatId} not found`);
+        if (!seat.isAvailable)
+          throw new Error(`Seat ${seat.seatNumber} is already taken`);
+        if (seat.flightId !== segment.flightId) {
           throw new Error(
-            `Seat ${segment.seatId} is unavailable or not found.`,
+            `Seat ${seat.seatNumber} does not belong to flight ${flight.flightNumber}`,
           );
         }
-        calculatedTotalPrice += parseFloat(seat.price);
+
+        subtotal += parseFloat(seat.price);
       }
 
-      // 2. Add prices of selected Add-Ons
-      if (addOnIds && addOnIds.length > 0) {
-        const selectedAddOns = await tx.addOn.findMany({
+      // 2. Validate and add add-on prices
+      if (addOnIds.length > 0) {
+        const addOns = await tx.addOn.findMany({
           where: { id: { in: addOnIds } },
         });
-        selectedAddOns.forEach((addon) => {
-          calculatedTotalPrice += parseFloat(addon.price);
-        });
+        if (addOns.length !== addOnIds.length) {
+          throw new Error("One or more add-ons not found");
+        }
+        addOns.forEach((a) => (subtotal += parseFloat(a.price)));
       }
 
-      // 3. Create the parent FlightBooking
-      const booking = await tx.flightBooking.create({
-        data: {
-          userId,
-          totalPrice: calculatedTotalPrice,
-          status: "BOOKED",
-        },
+      const tax = parseFloat((subtotal * 0.075).toFixed(2));
+      const serviceFee = parseFloat((subtotal * 0.02).toFixed(2));
+      const totalPrice = parseFloat((subtotal + tax + serviceFee).toFixed(2));
+
+      // 3. Get first flight for service dates
+      const firstFlight = await tx.flight.findUnique({
+        where: { id: segments[0].flightId },
+      });
+      const lastFlight = await tx.flight.findUnique({
+        where: { id: segments[segments.length - 1].flightId },
       });
 
-      // 4. Create BookingSegments for each leg
+      // 4. Create FlightBooking
+      const flightBooking = await tx.flightBooking.create({
+        data: { userId, totalPrice, status: "BOOKED" },
+      });
+
+      // 5. Create all segments
       await tx.bookingSegment.createMany({
         data: segments.map((seg) => ({
-          flightBookingId: booking.id,
+          flightBookingId: flightBooking.id,
           flightId: seg.flightId,
           seatId: seg.seatId,
         })),
       });
 
-      // 5. Create BookingAddOn entries
-      if (addOnIds && addOnIds.length > 0) {
+      // 6. Create add-on links
+      if (addOnIds.length > 0) {
         await tx.bookingAddOn.createMany({
           data: addOnIds.map((id) => ({
-            flightBookingId: booking.id,
+            flightBookingId: flightBooking.id,
             addOnId: id,
           })),
         });
       }
 
-      // 6. Mark all involved seats as booked
+      // 7. Lock all seats atomically
       await tx.seat.updateMany({
         where: { id: { in: segments.map((s) => s.seatId) } },
         data: { isAvailable: false },
       });
 
-      return await tx.flightBooking.findUnique({
-        where: { id: booking.id },
-        include: {
-          segments: {
-            include: {
-              flight: true, // Includes departure/arrival info
-              seat: true, // Includes seat number and class
-            },
-          },
-          addOns: {
-            include: {
-              addOn: true, // Includes name and price of the baggage/meal
-            },
-          },
+      // 8. Create UnifiedBooking (was missing entirely before)
+      const unifiedBooking = await tx.unifiedBooking.create({
+        data: {
+          userId,
+          serviceType: "FLIGHT",
+          flightBookingId: flightBooking.id,
+          serviceStartDate: firstFlight.departureTime,
+          serviceEndDate: lastFlight.arrivalTime,
+          subtotal,
+          tax,
+          serviceFee,
+          totalPrice,
+          bookingStatus: "PENDING_PAYMENT",
+          paymentStatus: "PENDING",
+          referenceCode: generateReferenceCode("FLIGHT"),
+          cartId: cartId || null,
         },
       });
+
+      // 9. Link unified booking back to flight booking
+      await tx.flightBooking.update({
+        where: { id: flightBooking.id },
+        data: { unifiedBookingId: unifiedBooking.id },
+      });
+
+      if (cartId) {
+        await tx.cart.update({
+          where: { id: cartId },
+          data: { status: "CHECKED_OUT", checkedOutAt: new Date() },
+        });
+      }
+
+      // 10. Return full booking details
+      const fullBooking = await tx.flightBooking.findUnique({
+        where: { id: flightBooking.id },
+        include: {
+          segments: { include: { flight: true, seat: true } },
+          addOns: { include: { addOn: true } },
+        },
+      });
+
+      return { flightBooking: fullBooking, unifiedBooking };
     });
 
-    res
-      .status(201)
-      .json({ message: "Trip booked successfully", booking: result });
+    return res.status(201).json({
+      status: "success",
+      message: "Flight booked successfully",
+      data: {
+        booking: result.flightBooking,
+        unified: {
+          id: result.unifiedBooking.id,
+          referenceCode: result.unifiedBooking.referenceCode,
+          bookingStatus: result.unifiedBooking.bookingStatus,
+          pricing: {
+            subtotal: result.unifiedBooking.subtotal,
+            tax: result.unifiedBooking.tax,
+            serviceFee: result.unifiedBooking.serviceFee,
+            totalPrice: result.unifiedBooking.totalPrice,
+            currency: "NGN",
+          },
+        },
+      },
+    });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    console.error("Create Flight Booking Error:", error);
+    // Distinguish validation errors (400) from server errors (500)
+    const isClientError =
+      error.message.includes("not found") ||
+      error.message.includes("taken") ||
+      error.message.includes("cancelled") ||
+      error.message.includes("does not belong");
+    return res.status(isClientError ? 400 : 500).json({
+      status: "fail",
+      error: error.message,
+    });
   }
 };
 
+// ==================== GET ALL FLIGHT BOOKINGS ====================
 const getAllFlightBookings = async (req, res) => {
   try {
-    const bookings = await prisma.FlightBooking.findMany();
-    res.status(200).json({ bookings });
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // Customers only see their own, admins see all
+    const where = req.user.role !== "admin" ? { userId: req.user.sub } : {};
+
+    const [bookings, total] = await Promise.all([
+      prisma.flightBooking.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: "desc" },
+        include: {
+          segments: { include: { flight: true, seat: true } },
+          addOns: { include: { addOn: true } },
+        },
+      }),
+      prisma.flightBooking.count({ where }),
+    ]);
+
+    return res.status(200).json({
+      status: "success",
+      results: bookings.length,
+      total,
+      totalPages: Math.ceil(total / limit),
+      currentPage: page,
+      data: bookings,
+    });
   } catch (error) {
-    console.error("Get Bookings Error:", error);
-    res.status(500).json({ error: "Internal Server Error" });
+    console.error("Get All Flight Bookings Error:", error);
+    return res
+      .status(500)
+      .json({ status: "error", error: "Internal Server Error" });
   }
 };
 
+// ==================== GET FLIGHT BOOKING BY ID ====================
 const getFlightBookingById = async (req, res) => {
   try {
-    const bookingId = req.params.bookingId;
-    const booking = await prisma.FlightBooking.findUnique({
+    const { bookingId } = req.params;
+
+    const booking = await prisma.flightBooking.findUnique({
       where: { id: bookingId },
+      include: {
+        segments: { include: { flight: true, seat: true } },
+        addOns: { include: { addOn: true } },
+        unifiedBooking: {
+          select: {
+            referenceCode: true,
+            bookingStatus: true,
+            totalPrice: true,
+            paymentStatus: true,
+          },
+        },
+      },
     });
 
     if (!booking) {
-      return res.status(404).json({ error: "Booking not found" });
+      return res
+        .status(404)
+        .json({ status: "fail", error: "Booking not found" });
     }
 
-    res.status(200).json({ booking });
+    // Customers can only view their own bookings
+    if (req.user.role !== "admin" && booking.userId !== req.user.sub) {
+      return res.status(403).json({ status: "fail", error: "Access denied" });
+    }
+
+    return res.status(200).json({ status: "success", data: booking });
   } catch (error) {
-    console.error("Get Booking By ID Error:", error);
-    res.status(500).json({ error: "Internal Server Error" });
+    console.error("Get Flight Booking By ID Error:", error);
+    return res
+      .status(500)
+      .json({ status: "error", error: "Internal Server Error" });
   }
 };
 
+// ==================== UPDATE FLIGHT BOOKING STATUS (admin) ====================
 const updateFlightBookingByStatus = async (req, res) => {
   try {
     const { bookingId } = req.params;
     const { status } = req.body;
+    const upperStatus = status.toUpperCase();
 
-    const updateData = { status: status.toUpperCase() };
+    const existing = await prisma.flightBooking.findUnique({
+      where: { id: bookingId },
+    });
+    if (!existing) {
+      return res
+        .status(404)
+        .json({ status: "fail", error: "Booking not found" });
+    }
 
-    if (status.toUpperCase() === "PAID") {
-      const qrData = await generateBoardingQR(bookingId);
-      updateData.qrCode = qrData;
+    // Validate status transitions
+    const validTransitions = {
+      BOOKED: ["PAID", "CANCELLED"],
+      PAID: ["BOARDED", "CANCELLED"],
+      BOARDED: [],
+      CANCELLED: [],
+    };
+
+    if (!validTransitions[existing.status]?.includes(upperStatus)) {
+      return res.status(400).json({
+        status: "fail",
+        error: `Cannot transition from "${existing.status}" to "${upperStatus}"`,
+        allowedTransitions: validTransitions[existing.status],
+      });
+    }
+
+    const updateData = { status: upperStatus };
+
+    // Generate QR code when payment is confirmed
+    if (upperStatus === "PAID") {
+      updateData.qrCode = await generateBoardingQR(bookingId);
     }
 
     const updatedBooking = await prisma.flightBooking.update({
       where: { id: bookingId },
       data: updateData,
-      // ADD THIS INCLUDE BLOCK:
       include: {
-        segments: {
-          include: {
-            flight: true, // This brings back the Flight details
-            seat: true, // This brings back the Seat details
-          },
-        },
-        addOns: true, // This brings back the baggage/meals
+        segments: { include: { flight: true, seat: true } },
+        addOns: { include: { addOn: true } },
       },
     });
 
-    res.status(200).json(updatedBooking);
+    // Mirror status to unified booking
+    if (existing.unifiedBookingId) {
+      const unifiedStatus =
+        upperStatus === "PAID"
+          ? "CONFIRMED"
+          : upperStatus === "CANCELLED"
+            ? "CANCELLED"
+            : undefined;
+      if (unifiedStatus) {
+        await prisma.unifiedBooking.update({
+          where: { id: existing.unifiedBookingId },
+          data: {
+            bookingStatus: unifiedStatus,
+            paymentStatus: upperStatus === "PAID" ? "SUCCESSFUL" : undefined,
+          },
+        });
+      }
+    }
+
+    return res.status(200).json({
+      status: "success",
+      message: `Booking status updated to ${upperStatus}`,
+      data: updatedBooking,
+    });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Update Flight Booking Status Error:", error);
+    return res.status(500).json({ status: "error", error: error.message });
   }
 };
 
+// ==================== CANCEL FLIGHT BOOKING ====================
 const cancelFlightBookingById = async (req, res) => {
   try {
-    const { bookingId } = req.params; // Keep as string (UUID)
+    const { bookingId } = req.params;
+    const userId = req.user.sub;
 
-    // 1. Fetch booking with its segments to get ALL seat IDs
-    const existingBooking = await prisma.flightBooking.findUnique({
+    const existing = await prisma.flightBooking.findUnique({
       where: { id: bookingId },
       include: { segments: true },
     });
 
-    if (!existingBooking)
-      return res.status(404).json({ error: "Booking not found" });
-    if (existingBooking.status === "CANCELLED")
-      return res.status(400).json({ error: "Already cancelled" });
+    if (!existing) {
+      return res
+        .status(404)
+        .json({ status: "fail", error: "Booking not found" });
+    }
 
-    const seatIds = existingBooking.segments.map((seg) => seg.seatId);
+    // Ownership check (admin can cancel any)
+    if (req.user.role !== "admin" && existing.userId !== userId) {
+      return res.status(403).json({ status: "fail", error: "Access denied" });
+    }
 
-    // 2. Transaction: Update Booking + Release ALL Seats
-    const [cancelledBooking] = await prisma.$transaction([
+    if (existing.status === "CANCELLED") {
+      return res
+        .status(400)
+        .json({ status: "fail", error: "Booking is already cancelled" });
+    }
+
+    if (existing.status === "BOARDED") {
+      return res
+        .status(400)
+        .json({ status: "fail", error: "Cannot cancel a boarded flight" });
+    }
+
+    const seatIds = existing.segments.map((seg) => seg.seatId);
+
+    await prisma.$transaction([
       prisma.flightBooking.update({
         where: { id: bookingId },
         data: { status: "CANCELLED" },
       }),
+      // Release all seats back to available
       prisma.seat.updateMany({
         where: { id: { in: seatIds } },
         data: { isAvailable: true },
       }),
     ]);
 
-    res.status(200).json({
-      message: "Trip cancelled. All seats released.",
-      booking: cancelledBooking,
+    // Update unified booking status
+    if (existing.unifiedBookingId) {
+      await prisma.unifiedBooking.update({
+        where: { id: existing.unifiedBookingId },
+        data: {
+          bookingStatus: "CANCELLED",
+          cancelledAt: new Date(),
+          cancelledBy: userId,
+        },
+      });
+    }
+
+    return res.status(200).json({
+      status: "success",
+      message: "Flight booking cancelled. All seats released.",
+      data: { bookingId, seatsReleased: seatIds.length },
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Cancel Flight Booking Error:", error);
+    return res.status(500).json({ status: "error", error: error.message });
   }
 };
 
+// ==================== DELETE FLIGHT BOOKING (admin) ====================
 const deleteFlightBookingById = async (req, res) => {
   try {
-    const bookingId = req.params.bookingId;
-    const existingBooking = await prisma.FlightBooking.findUnique({
+    const { bookingId } = req.params;
+
+    const existing = await prisma.flightBooking.findUnique({
       where: { id: bookingId },
     });
-
-    if (!existingBooking) {
-      return res.status(404).json({ error: "Booking not found" });
+    if (!existing) {
+      return res
+        .status(404)
+        .json({ status: "fail", error: "Booking not found" });
     }
 
-    await prisma.FlightBooking.delete({
-      where: { id: bookingId },
-    });
+    await prisma.flightBooking.delete({ where: { id: bookingId } });
 
-    res.status(200).json({ message: "Booking deleted successfully" });
+    return res
+      .status(200)
+      .json({ status: "success", message: "Booking deleted successfully" });
   } catch (error) {
-    console.error("Delete Booking Error:", error);
-    res.status(500).json({ error: "Internal Server Error" });
+    console.error("Delete Flight Booking Error:", error);
+    return res
+      .status(500)
+      .json({ status: "error", error: "Internal Server Error" });
   }
 };
 
@@ -218,7 +435,7 @@ module.exports = {
   createFlightBooking,
   getAllFlightBookings,
   getFlightBookingById,
-  cancelFlightBookingById,
   updateFlightBookingByStatus,
+  cancelFlightBookingById,
   deleteFlightBookingById,
 };

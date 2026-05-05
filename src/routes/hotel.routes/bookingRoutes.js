@@ -1,9 +1,11 @@
-// bookingRoutes.js
 const express = require("express");
 const router = express.Router();
 const { authenticate: protect } = require("../../middleware/auth");
-const validateSchema = require("../../middleware/validate"); // ✅ Add this
-const { bookingSchema } = require("../../model/hotel.model/bookingModel");
+const validateSchema = require("../../middleware/validate");
+const {
+  bookingSchema,
+  updateBookingSchema,
+} = require("../../model/hotel.model/bookingModel");
 const {
   getBookings,
   getBookingById,
@@ -11,16 +13,110 @@ const {
   updateBookingById,
   deleteBooking,
   cancelBooking,
+  getMyUnifiedBookings,
+  cancelUnifiedBooking,
 } = require("../../controllers/hotel.controller/bookingController");
 
 router.use(protect);
 
+// ─────────────────────────────────────────────
+// SWAGGER COMPONENTS
+// ─────────────────────────────────────────────
 /**
  * @openapi
- * /hotel/bookings/getBookings:
+ * components:
+ *   schemas:
+ *     PricingBreakdown:
+ *       type: object
+ *       properties:
+ *         subtotal:
+ *           type: number
+ *           example: 150000
+ *         tax:
+ *           type: number
+ *           example: 11250
+ *         serviceFee:
+ *           type: number
+ *           example: 3000
+ *         totalPrice:
+ *           type: number
+ *           example: 164250
+ *         currency:
+ *           type: string
+ *           example: NGN
+ *         breakdown:
+ *           type: object
+ *           properties:
+ *             pricePerNight:
+ *               type: number
+ *               example: 50000
+ *             numberOfNights:
+ *               type: integer
+ *               example: 3
+ *
+ *     UnifiedBookingSummary:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *         referenceCode:
+ *           type: string
+ *           example: HTL-M5X3K-AB12
+ *         bookingStatus:
+ *           type: string
+ *           example: PENDING_PAYMENT
+ *         cancellationDeadline:
+ *           type: string
+ *           format: date-time
+ *         pricing:
+ *           $ref: '#/components/schemas/PricingBreakdown'
+ *
+ *     BookingResponse:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *           format: uuid
+ *         status:
+ *           type: string
+ *           enum: [pending, confirmed, checked_in, checked_out, cancelled, no_show]
+ *         paymentStatus:
+ *           type: string
+ *           enum: [PENDING, SUCCESSFUL, FAILED, REFUNDED, CANCELLED]
+ *         checkInDate:
+ *           type: string
+ *           format: date-time
+ *         checkOutDate:
+ *           type: string
+ *           format: date-time
+ *         numberOfGuests:
+ *           type: integer
+ *         specialRequests:
+ *           type: string
+ *           nullable: true
+ *         room:
+ *           type: object
+ *           properties:
+ *             roomNumber:
+ *               type: string
+ *             type:
+ *               type: string
+ *             price:
+ *               type: number
+ */
+
+// ─────────────────────────────────────────────
+// STEP 1: EXACT STATIC ROUTES FIRST
+// These must come before ANY /:param routes
+// ─────────────────────────────────────────────
+
+/**
+ * @openapi
+ * /hotel/bookings/my-bookings:
  *   get:
- *     tags: [Bookings]
- *     summary: Get all bookings for logged-in user
+ *     tags: [Unified Bookings]
+ *     summary: Get all my bookings across all services (hotel, flight, attraction)
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -28,27 +124,69 @@ router.use(protect);
  *         name: page
  *         schema:
  *           type: integer
+ *           default: 1
  *       - in: query
  *         name: limit
  *         schema:
  *           type: integer
+ *           default: 10
+ *       - in: query
+ *         name: serviceType
+ *         schema:
+ *           type: string
+ *           enum: [HOTEL, FLIGHT, ATTRACTION, CAR]
+ *         description: Filter by service type
+ *       - in: query
+ *         name: bookingStatus
+ *         schema:
+ *           type: string
+ *           enum: [PENDING_PAYMENT, CONFIRMED, COMPLETED, CANCELLED, REFUNDED, NO_SHOW]
+ *         description: Filter by booking status
  *     responses:
  *       200:
  *         description: Bookings retrieved successfully
  *       401:
  *         description: Unauthorized
- *       500:
- *         description: Internal server error
  */
-router.get("/getBookings", getBookings);
+router.get("/my-bookings", getMyUnifiedBookings); // ✅ GET static — safe before /:bookingId
 
 /**
  * @openapi
- * /hotel/bookings/createBookings:
+ * /hotel/bookings:
+ *   get:
+ *     tags: [Hotel Bookings]
+ *     summary: Get all hotel bookings (admin sees all, customers see own)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *     responses:
+ *       200:
+ *         description: Bookings retrieved successfully
+ *       401:
+ *         description: Unauthorized
+ */
+router.get("/", getBookings);
+
+/**
+ * @openapi
+ * /hotel/bookings:
  *   post:
- *     tags: [Bookings]
- *     summary: Create a new booking
- *     description: Total price is automatically calculated from room price and number of nights
+ *     tags: [Hotel Bookings]
+ *     summary: Create a new hotel booking
+ *     description: |
+ *       Creates a hotel booking + a unified booking entry automatically.
+ *       Pricing is calculated server-side: subtotal + 7.5% VAT + 2% service fee.
+ *       The `referenceCode` in the response is what you use to track or cancel this booking.
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -65,69 +203,33 @@ router.get("/getBookings", getBookings);
  *               roomId:
  *                 type: integer
  *                 example: 1
- *                 description: ID of the room being booked
  *               checkInDate:
  *                 type: string
  *                 format: date
- *                 example: "2024-12-25"
- *                 description: Check-in date (YYYY-MM-DD)
+ *                 example: "2026-08-01"
  *               checkOutDate:
  *                 type: string
  *                 format: date
- *                 example: "2024-12-30"
- *                 description: Check-out date (YYYY-MM-DD)
+ *                 example: "2026-08-05"
  *               numberOfGuests:
  *                 type: integer
  *                 minimum: 1
- *                 maximum: 10
+ *                 default: 1
  *                 example: 2
- *                 description: Number of guests staying
  *               specialRequests:
  *                 type: string
- *                 example: "Extra pillows, high floor"
- *                 description: Any special requests for the booking
- *             example:
- *               roomId: 1
- *               checkInDate: "2024-12-25"
- *               checkOutDate: "2024-12-30"
- *               numberOfGuests: 2
- *               specialRequests: "Ocean view room if possible"
+ *                 nullable: true
+ *                 example: "High floor, extra towels"
+ *               cartId:
+ *                 type: string
+ *                 format: uuid
+ *                 nullable: true
+ *                 description: Include if booking came from a cart checkout
  *     responses:
  *       201:
  *         description: Booking created successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: success
- *                 message:
- *                   type: string
- *                   example: Booking created successfully
- *                 data:
- *                   type: object
- *                   properties:
- *                     id:
- *                       type: string
- *                     totalPrice:
- *                       type: number
- *                       example: 500
- *                     breakdown:
- *                       type: object
- *                       properties:
- *                         roomPrice:
- *                           type: number
- *                           example: 100
- *                         numberOfNights:
- *                           type: integer
- *                           example: 5
- *                         roomNumber:
- *                           type: string
- *                           example: "101"
  *       400:
- *         description: Validation error or room not available
+ *         description: Validation error, past date, or room not available
  *       401:
  *         description: Unauthorized
  *       404:
@@ -137,14 +239,72 @@ router.get("/getBookings", getBookings);
  *       500:
  *         description: Internal server error
  */
-router.post("/createBookings", validateSchema(bookingSchema), createBookings);
+router.post("/", validateSchema(bookingSchema), createBookings);
+
+// ─────────────────────────────────────────────
+// STEP 2: NESTED STATIC SEGMENT ROUTES NEXT
+// /unified/:param must come before /:bookingId
+// because Express would match "unified" as bookingId
+// ─────────────────────────────────────────────
 
 /**
  * @openapi
- * /hotel/bookings/{bookingId}/getBookingsById:
+ * /hotel/bookings/unified/{unifiedBookingId}/cancel:
+ *   patch:
+ *     tags: [Unified Bookings]
+ *     summary: Cancel any booking (hotel, flight, or attraction) with automatic refund
+ *     description: |
+ *       Cancels a booking through the unified system. Refund policy:
+ *       - **Hotel**: 100% refund if cancelled 48h+ before check-in, 50% within 24–48h, 0% under 24h
+ *       - **Attraction**: 90% refund
+ *       - **Flight**: No refund
+ *
+ *       Refund is automatically credited to the user's wallet.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: unifiedBookingId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: The unified booking ID from the `unified.id` field in any booking response
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               reason:
+ *                 type: string
+ *                 example: "Change of plans"
+ *     responses:
+ *       200:
+ *         description: Booking cancelled successfully
+ *       400:
+ *         description: Already cancelled or cancellation window expired
+ *       403:
+ *         description: Access denied — not your booking
+ *       404:
+ *         description: Booking not found
+ *       500:
+ *         description: Internal server error
+ */
+router.patch("/unified/:unifiedBookingId/cancel", cancelUnifiedBooking); // ✅ before /:bookingId
+
+// ─────────────────────────────────────────────
+// STEP 3: PARAMETERIZED ROUTES LAST
+// /:bookingId will now only match after all
+// static routes above have had first chance
+// ─────────────────────────────────────────────
+
+/**
+ * @openapi
+ * /hotel/bookings/{bookingId}:
  *   get:
- *     tags: [Bookings]
- *     summary: Get booking by ID
+ *     tags: [Hotel Bookings]
+ *     summary: Get hotel booking by ID
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -153,25 +313,28 @@ router.post("/createBookings", validateSchema(bookingSchema), createBookings);
  *         required: true
  *         schema:
  *           type: string
+ *           format: uuid
  *     responses:
  *       200:
- *         description: Booking retrieved successfully
+ *         description: Booking retrieved
+ *       403:
+ *         description: Access denied
  *       404:
  *         description: Booking not found
  *       401:
  *         description: Unauthorized
- *       500:
- *         description: Internal server error
  */
-router.get("/:bookingId/getBookingsById", getBookingById);
+router.get("/:bookingId", getBookingById);
 
 /**
  * @openapi
- * /hotel/bookings/{bookingId}/update:
+ * /hotel/bookings/{bookingId}/cancel:
  *   patch:
- *     tags: [Bookings]
- *     summary: Update a booking
- *     description: Total price is automatically recalculated if dates change
+ *     tags: [Hotel Bookings]
+ *     summary: Cancel a hotel booking (no refund — use unified cancel for paid bookings)
+ *     description: |
+ *       Simple cancel for `pending` or `confirmed` bookings only.
+ *       If the booking has been paid, use `PATCH /hotel/bookings/unified/{unifiedBookingId}/cancel` instead to get a refund.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -180,6 +343,40 @@ router.get("/:bookingId/getBookingsById", getBookingById);
  *         required: true
  *         schema:
  *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Booking cancelled
+ *       400:
+ *         description: Cannot cancel with current status
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: Booking not found
+ */
+router.patch("/:bookingId/cancel", cancelBooking); // ✅ /cancel suffix makes this more specific than /:bookingId alone
+
+/**
+ * @openapi
+ * /hotel/bookings/{bookingId}:
+ *   patch:
+ *     tags: [Hotel Bookings]
+ *     summary: Update booking status or payment status (admin)
+ *     description: |
+ *       Valid status transitions:
+ *       - `pending` → `confirmed`, `cancelled`
+ *       - `confirmed` → `checked_in`, `cancelled`, `no_show`
+ *       - `checked_in` → `checked_out`
+ *       - Terminal states (`checked_out`, `cancelled`, `no_show`) are final
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: bookingId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
  *     requestBody:
  *       content:
  *         application/json:
@@ -189,98 +386,31 @@ router.get("/:bookingId/getBookingsById", getBookingById);
  *               status:
  *                 type: string
  *                 enum: [pending, confirmed, checked_in, checked_out, cancelled, no_show]
- *               checkInDate:
+ *               paymentStatus:
  *                 type: string
- *                 format: date
- *               checkOutDate:
- *                 type: string
- *                 format: date
- *               numberOfGuests:
- *                 type: integer
- *                 minimum: 1
- *               specialRequests:
- *                 type: string
+ *                 enum: [pending, completed, failed, refunded]
  *             example:
- *               status: "confirmed"
- *               checkInDate: "2024-12-26"
- *               checkOutDate: "2024-12-31"
- *               numberOfGuests: 3
- *               specialRequests: "Late check-in requested"
+ *               status: confirmed
  *     responses:
  *       200:
- *         description: Booking updated successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: success
- *                 message:
- *                   type: string
- *                 data:
- *                   type: object
+ *         description: Updated successfully
  *       400:
- *         description: Invalid status transition or validation error
+ *         description: Invalid status transition
  *       404:
  *         description: Booking not found
- *       409:
- *         description: Room already booked for these dates
- *       401:
- *         description: Unauthorized
- *       500:
- *         description: Internal server error
  */
-router.patch("/:bookingId/update", updateBookingById);
+router.patch(
+  "/:bookingId",
+  validateSchema(updateBookingSchema),
+  updateBookingById,
+);
 
 /**
  * @openapi
- * /hotel/bookings/{bookingId}/cancel:
- *   patch:
- *     tags: [Bookings]
- *     summary: Cancel a booking
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: bookingId
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Booking cancelled successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: success
- *                 message:
- *                   type: string
- *                 data:
- *                   type: object
- *       400:
- *         description: Cannot cancel booking with current status
- *       404:
- *         description: Booking not found
- *       401:
- *         description: Unauthorized
- *       500:
- *         description: Internal server error
- */
-router.patch("/:bookingId/cancel", cancelBooking);
-
-/**
- * @openapi
- * /hotel/bookings/{bookingId}/removeBooking:
+ * /hotel/bookings/{bookingId}:
  *   delete:
- *     tags: [Bookings]
- *     summary: Delete a booking (admin only)
- *     description: Permanently removes a booking from the system
+ *     tags: [Hotel Bookings]
+ *     summary: Permanently delete a booking (admin only)
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -289,18 +419,15 @@ router.patch("/:bookingId/cancel", cancelBooking);
  *         required: true
  *         schema:
  *           type: string
+ *           format: uuid
  *     responses:
  *       200:
- *         description: Booking deleted successfully
+ *         description: Deleted successfully
  *       404:
- *         description: Booking not found
- *       401:
- *         description: Unauthorized
+ *         description: Not found
  *       403:
- *         description: Forbidden - Admin access required
- *       500:
- *         description: Internal server error
+ *         description: Admin access required
  */
-router.delete("/:bookingId/removeBooking", deleteBooking);
+router.delete("/:bookingId", deleteBooking);
 
 module.exports = router;
