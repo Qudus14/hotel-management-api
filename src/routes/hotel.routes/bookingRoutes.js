@@ -220,11 +220,6 @@ router.get("/", getBookings);
  *                 type: string
  *                 nullable: true
  *                 example: "High floor, extra towels"
- *               cartId:
- *                 type: string
- *                 format: uuid
- *                 nullable: true
- *                 description: Include if booking came from a cart checkout
  *     responses:
  *       201:
  *         description: Booking created successfully
