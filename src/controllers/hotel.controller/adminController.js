@@ -252,40 +252,35 @@ const updateUser = async (req, res) => {
  */
 const deleteUser = async (req, res) => {
   try {
-    const { id: UserId } = req.params;
+    const { userId } = req.params;
 
     const user = await prisma.user.findUnique({
-      where: { id: UserId },
-      include: { bookings: true },
+      where: { id: userId },
+      select: { role: true }, // only fetch what we need
     });
 
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    // Prevent deleting the last admin
     if (user.role === "admin") {
-      const adminCount = await prisma.user.count({
-        where: { role: "admin" },
-      });
-
+      const adminCount = await prisma.user.count({ where: { role: "admin" } });
       if (adminCount <= 1) {
-        return res.status(400).json({
-          error: "Cannot delete the last admin user",
-        });
+        return res
+          .status(400)
+          .json({ error: "Cannot delete the last admin user" });
       }
     }
 
-    // Delete user (cascade will handle bookings if set in schema)
-    await prisma.user.delete({
-      where: { id: UserId },
-    });
+    await prisma.user.delete({ where: { id: userId } });
 
-    res.status(200).json({
-      success: true,
-      message: "User deleted successfully",
-    });
+    res
+      .status(200)
+      .json({ success: true, message: "User deleted successfully" });
   } catch (error) {
+    if (error.code === "P2025") {
+      return res.status(404).json({ error: "User not found" });
+    }
     console.error("Delete user error:", error);
     res.status(500).json({ error: "Failed to delete user" });
   }
@@ -443,7 +438,7 @@ const getRevenueReport = async (req, res) => {
 
     const totalRevenue = bookings.reduce(
       (sum, b) => sum + Number(b.totalPrice),
-      0,
+      0
     );
 
     res.status(200).json({
