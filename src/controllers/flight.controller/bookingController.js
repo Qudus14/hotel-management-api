@@ -16,6 +16,11 @@ const createFlightBooking = async (req, res) => {
     const userId = req.user.sub; // FIX: from JWT, NOT req.body
     const { segments, addOnIds = [], cartId } = req.body;
 
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, name: true, email: true },
+    });
+
     const result = await prisma.$transaction(async (tx) => {
       let subtotal = 0;
 
@@ -36,7 +41,7 @@ const createFlightBooking = async (req, res) => {
           throw new Error(`Seat ${seat.seatNumber} is already taken`);
         if (seat.flightId !== segment.flightId) {
           throw new Error(
-            `Seat ${seat.seatNumber} does not belong to flight ${flight.flightNumber}`,
+            `Seat ${seat.seatNumber} does not belong to flight ${flight.flightNumber}`
           );
         }
 
@@ -147,6 +152,7 @@ const createFlightBooking = async (req, res) => {
         booking: result.flightBooking,
         unified: {
           id: result.unifiedBooking.id,
+          user: user,
           referenceCode: result.unifiedBooking.referenceCode,
           bookingStatus: result.unifiedBooking.bookingStatus,
           pricing: {
@@ -193,6 +199,16 @@ const getAllFlightBookings = async (req, res) => {
         include: {
           segments: { include: { flight: true, seat: true } },
           addOns: { include: { addOn: true } },
+
+          unifiedBooking: {
+            select: {
+              id: true,
+              user: true,
+              referenceCode: true,
+              bookingStatus: true,
+              paymentStatus: true,
+            },
+          },
         },
       }),
       prisma.flightBooking.count({ where }),
@@ -226,6 +242,7 @@ const getFlightBookingById = async (req, res) => {
         addOns: { include: { addOn: true } },
         unifiedBooking: {
           select: {
+            user: true,
             referenceCode: true,
             bookingStatus: true,
             totalPrice: true,
@@ -309,8 +326,8 @@ const updateFlightBookingByStatus = async (req, res) => {
         upperStatus === "PAID"
           ? "CONFIRMED"
           : upperStatus === "CANCELLED"
-            ? "CANCELLED"
-            : undefined;
+          ? "CANCELLED"
+          : undefined;
       if (unifiedStatus) {
         await prisma.unifiedBooking.update({
           where: { id: existing.unifiedBookingId },

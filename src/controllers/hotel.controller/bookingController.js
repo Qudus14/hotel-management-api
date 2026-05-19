@@ -246,6 +246,7 @@ const getBookingById = async (req, res) => {
         },
         unifiedBooking: {
           select: {
+            user: true,
             referenceCode: true,
             bookingStatus: true,
             totalPrice: true,
@@ -527,7 +528,7 @@ const getMyUnifiedBookings = async (req, res) => {
         }
 
         return { ...booking, serviceDetails };
-      }),
+      })
     );
 
     return res.status(200).json({
@@ -658,7 +659,7 @@ const cancelUnifiedBooking = async (req, res) => {
         (
           (parseFloat(unifiedBooking.totalPrice) * refundPercentage) /
           100
-        ).toFixed(2),
+        ).toFixed(2)
       );
     }
 
@@ -680,7 +681,7 @@ const cancelUnifiedBooking = async (req, res) => {
         const user = await tx.user.findUnique({ where: { id: userId } });
         const balanceBefore = parseFloat(user.walletBalance);
         const balanceAfter = parseFloat(
-          (balanceBefore + refundAmount).toFixed(2),
+          (balanceBefore + refundAmount).toFixed(2)
         );
 
         await tx.user.update({

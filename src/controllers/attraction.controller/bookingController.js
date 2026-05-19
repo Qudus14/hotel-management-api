@@ -18,6 +18,11 @@ const createAttractionBooking = async (req, res) => {
     const { attractionId, timeSlotId, numberOfPeople, visitorNames, cartId } =
       req.body;
 
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, name: true, email: true, phoneNumber: true },
+    });
+
     // 1. Validate attraction
     const attraction = await prisma.touristAttraction.findUnique({
       where: { id: attractionId },
@@ -28,12 +33,10 @@ const createAttractionBooking = async (req, res) => {
         .json({ status: "fail", error: "Attraction not found" });
     }
     if (!attraction.isActive || !attraction.isBookable) {
-      return res
-        .status(400)
-        .json({
-          status: "fail",
-          error: "Attraction is not available for booking",
-        });
+      return res.status(400).json({
+        status: "fail",
+        error: "Attraction is not available for booking",
+      });
     }
 
     // 2. Validate time slot
@@ -59,7 +62,7 @@ const createAttractionBooking = async (req, res) => {
 
     // 3. Validate advance booking rules
     const slotDateTime = new Date(
-      `${timeSlot.date.toISOString().split("T")[0]}T${timeSlot.startTime}`,
+      `${timeSlot.date.toISOString().split("T")[0]}T${timeSlot.startTime}`
     );
     const hoursUntilSlot = (slotDateTime - new Date()) / (1000 * 3600);
 
@@ -96,7 +99,7 @@ const createAttractionBooking = async (req, res) => {
 
     const cancellationDeadline = new Date(slotDateTime);
     cancellationDeadline.setHours(
-      cancellationDeadline.getHours() - attraction.cancellationWindowHours,
+      cancellationDeadline.getHours() - attraction.cancellationWindowHours
     );
 
     // 6. Atomic transaction
@@ -139,7 +142,7 @@ const createAttractionBooking = async (req, res) => {
           attractionId,
           timeSlotId,
           numberOfPeople,
-        }),
+        })
       );
 
       // Create the attraction booking
@@ -192,6 +195,7 @@ const createAttractionBooking = async (req, res) => {
           referenceCode: result.unifiedBooking.referenceCode,
           bookingStatus: result.unifiedBooking.bookingStatus,
           cancellationDeadline: result.unifiedBooking.cancellationDeadline,
+          user: user,
           pricing: {
             subtotal,
             tax,
@@ -240,8 +244,10 @@ const getMyAttractionBookings = async (req, res) => {
             },
           },
           timeSlot: { select: { date: true, startTime: true, endTime: true } },
+
           unifiedBooking: {
             select: {
+              user: true,
               referenceCode: true,
               bookingStatus: true,
               paymentStatus: true,
@@ -282,11 +288,13 @@ const getAttractionBookingById = async (req, res) => {
         timeSlot: true,
         unifiedBooking: {
           select: {
+            user: true,
             referenceCode: true,
             bookingStatus: true,
             paymentStatus: true,
             totalPrice: true,
             cancellationDeadline: true,
+
             userId: true,
           },
         },
@@ -324,7 +332,7 @@ const scanAttractionTicket = async (req, res) => {
         attraction: { select: { name: true } },
         timeSlot: { select: { date: true, startTime: true, endTime: true } },
         unifiedBooking: {
-          select: { bookingStatus: true, paymentStatus: true },
+          select: { user: true, bookingStatus: true, paymentStatus: true },
         },
       },
     });
@@ -404,6 +412,7 @@ const getAttractionBookingsAdmin = async (req, res) => {
           timeSlot: { select: { date: true, startTime: true, endTime: true } },
           unifiedBooking: {
             select: {
+              user: true,
               referenceCode: true,
               paymentStatus: true,
               user: { select: { name: true, email: true } },
