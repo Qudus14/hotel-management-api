@@ -203,7 +203,14 @@ const getAllFlightBookings = async (req, res) => {
           unifiedBooking: {
             select: {
               id: true,
-              user: true,
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  phoneNumber: true,
+                },
+              },
               referenceCode: true,
               bookingStatus: true,
               paymentStatus: true,
@@ -242,7 +249,14 @@ const getFlightBookingById = async (req, res) => {
         addOns: { include: { addOn: true } },
         unifiedBooking: {
           select: {
-            user: true,
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                phoneNumber: true,
+              },
+            },
             referenceCode: true,
             bookingStatus: true,
             totalPrice: true,

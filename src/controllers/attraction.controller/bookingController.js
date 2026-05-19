@@ -247,7 +247,14 @@ const getMyAttractionBookings = async (req, res) => {
 
           unifiedBooking: {
             select: {
-              user: true,
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  phoneNumber: true,
+                },
+              },
               referenceCode: true,
               bookingStatus: true,
               paymentStatus: true,
@@ -288,7 +295,14 @@ const getAttractionBookingById = async (req, res) => {
         timeSlot: true,
         unifiedBooking: {
           select: {
-            user: true,
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                phoneNumber: true,
+              },
+            },
             referenceCode: true,
             bookingStatus: true,
             paymentStatus: true,
@@ -332,7 +346,18 @@ const scanAttractionTicket = async (req, res) => {
         attraction: { select: { name: true } },
         timeSlot: { select: { date: true, startTime: true, endTime: true } },
         unifiedBooking: {
-          select: { user: true, bookingStatus: true, paymentStatus: true },
+          select: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                phoneNumber: true,
+              },
+            },
+            bookingStatus: true,
+            paymentStatus: true,
+          },
         },
       },
     });
