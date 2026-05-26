@@ -1,4 +1,3 @@
-const { PrismaClient } = require("@prisma/client");
 const { prisma } = require("../../config/db");
 
 /**
@@ -171,7 +170,7 @@ const getUserById = async (req, res) => {
 };
 
 /**
- * Update user (admin only)
+ * Update user (admin only) - with auto vendor creation
  */
 const updateUser = async (req, res) => {
   try {
@@ -183,9 +182,17 @@ const updateUser = async (req, res) => {
       return res.status(400).json({ error: "User ID is required" });
     }
 
-    // 2. Check if user exists
+    // 2. Check if user exists and get current role
     const existingUser = await prisma.user.findUnique({
       where: { id: userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phoneNumber: true,
+        address: true,
+        role: true,
+      },
     });
 
     if (!existingUser) {
@@ -204,14 +211,17 @@ const updateUser = async (req, res) => {
     }
 
     // 4. Build dynamic update object
-    // Using Object.entries or a simple spread with checks is cleaner
     const updateData = {};
     if (name) updateData.name = name;
     if (email) updateData.email = email;
     if (phoneNumber !== undefined) updateData.phoneNumber = phoneNumber;
     if (address !== undefined) updateData.address = address;
 
-    // Ensure role matches your Prisma Enum (lowercase 'admin', 'customer', 'staff')
+    // Track if role is being changed to vendor
+    const isBecomingVendor =
+      role && role.toLowerCase() === "vendor" && existingUser.role !== "vendor";
+
+    // Ensure role matches your Prisma Enum (lowercase 'admin', 'customer', 'staff', 'vendor')
     if (role) updateData.role = role.toLowerCase();
 
     // 5. Execute Update
@@ -225,22 +235,68 @@ const updateUser = async (req, res) => {
         phoneNumber: true,
         address: true,
         role: true,
-        walletBalance: true, // Useful to return for the Admin UI
+        walletBalance: true,
         updatedAt: true,
       },
     });
 
+    // 6. 🔥 AUTO-CREATE VENDOR RECORD if role changed to vendor
+    let vendorData = null;
+    if (isBecomingVendor) {
+      // Check if vendor record already exists
+      const existingVendor = await prisma.vendor.findUnique({
+        where: { userId: userId },
+      });
+
+      if (!existingVendor) {
+        const newVendor = await prisma.vendor.create({
+          data: {
+            userId: userId,
+            vendorType: "HOTEL", // Default to HOTEL
+            businessName: updatedUser.name || "Business Name",
+            businessEmail: updatedUser.email,
+            businessPhone: updatedUser.phoneNumber || "Not provided",
+            businessAddress: updatedUser.address || "Not provided",
+            city: "Not specified",
+            state: "Not specified",
+            country: "Nigeria",
+            registrationNumber: `REG-${Date.now()}`,
+            status: "APPROVED", // Auto-approve for testing (change to PENDING for production)
+          },
+        });
+
+        vendorData = {
+          id: newVendor.id,
+          businessName: newVendor.businessName,
+          status: newVendor.status,
+        };
+
+        console.log(
+          `✅ Vendor record created for user: ${updatedUser.email} with ID: ${newVendor.id}`,
+        );
+      } else {
+        vendorData = {
+          id: existingVendor.id,
+          businessName: existingVendor.businessName,
+          status: existingVendor.status,
+        };
+      }
+    }
+
     res.status(200).json({
       success: true,
-      message: "User updated successfully",
+      message: isBecomingVendor
+        ? "User updated to vendor and vendor profile created successfully"
+        : "User updated successfully",
       data: updatedUser,
+      ...(vendorData && { vendor: vendorData }), // Include vendor info if created
     });
   } catch (error) {
     console.error("Update user error:", error);
 
-    // Handle Prisma specific errors (like invalid Enum values)
+    // Handle Prisma specific errors
     if (error.code === "P2002") {
-      return res.status(400).json({ error: "Unique constraint failed" });
+      return res.status(400).json({ error: "Email already in use" });
     }
 
     res.status(500).json({ error: "Failed to update user" });
@@ -438,7 +494,7 @@ const getRevenueReport = async (req, res) => {
 
     const totalRevenue = bookings.reduce(
       (sum, b) => sum + Number(b.totalPrice),
-      0
+      0,
     );
 
     res.status(200).json({

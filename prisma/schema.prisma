@@ -14,9 +14,59 @@ enum Role {
   admin
   staff
   customer
+  vendor
 }
 
-enum RoomType {
+enum KYCStatus {
+  NOT_SUBMITTED
+  SUBMITTED
+  UNDER_REVIEW
+  VERIFIED
+  REJECTED
+  EXPIRED
+}
+
+enum IDType {
+  NATIONAL_ID
+  PASSPORT
+  DRIVERS_LICENSE
+  VOTERS_CARD
+  BVN
+  NIN
+}
+
+enum OTPType {
+  EMAIL_VERIFICATION
+  PHONE_VERIFICATION
+  PASSWORD_RESET
+}
+
+enum VendorType {
+  HOTEL
+  CAR_RENTAL
+  AIRLINE
+  ATTRACTION
+}
+
+enum VendorStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  SUSPENDED
+  DEACTIVATED
+}
+
+enum BedType {
+  SINGLE
+  DOUBLE
+  QUEEN
+  KING
+  TWIN
+  BUNK
+}
+
+enum RoomTypeEnum {
   single
   double
   suite
@@ -44,6 +94,7 @@ enum BookingStatus {
   checked_out
   cancelled
   no_show
+  refunded
 }
 
 enum PaymentStatus {
@@ -61,6 +112,8 @@ enum PaymentMethod {
   BANK_TRANSFER
   CASH
   WALLET
+  STRIPE
+  PAYSTACK
 }
 
 enum TransactionType {
@@ -87,6 +140,31 @@ enum FlightStatus {
   DEPARTED
   ARRIVED
   CANCELLED
+  DIVERTED
+}
+
+enum SeatClass {
+  ECONOMY
+  BUSINESS
+  FIRST
+}
+
+enum PlaneStatus {
+  ACTIVE
+  MAINTENANCE
+  RETIRED
+}
+
+enum CarStatus {
+  AVAILABLE
+  RENTED
+  MAINTENANCE
+  INACTIVE
+}
+
+enum Transmission {
+  AUTOMATIC
+  MANUAL
 }
 
 enum AddOnType {
@@ -103,7 +181,6 @@ enum FlightBookingStatus {
   BOARDED
 }
 
-// New enums for unified system
 enum ServiceType {
   HOTEL
   FLIGHT
@@ -138,6 +215,12 @@ enum AttractionCategory {
   SPORTS_VENUE
   RELIGIOUS_SITE
   NATURE_RESERVE
+  ADVENTURE
+  FOOD_TOUR
+  NIGHTLIFE
+  WELLNESS
+  EDUCATIONAL
+  SPORTS
 }
 
 enum AttractionBookingStatus {
@@ -155,107 +238,404 @@ enum CartStatus {
   EXPIRED
 }
 
-// ==================== MAIN MODELS ====================
-
-model User {
-  id              String  @id @default(uuid())
-  name            String
-  email           String  @unique
-  password        String
-  role            Role    @default(customer)
-  address         String?
-  phoneNumber     String?
-  isActive        Boolean @default(true)
-  isEmailVerified Boolean @default(false)
-  profileImage    String?
-
-  // Changed from Float to Decimal for consistency
-  walletBalance Decimal @default(0) @db.Decimal(12, 2)
-
-  // Soft delete fields
-  deletedAt DateTime?
-  deletedBy String? // Admin who performed soft delete
-
-  // Relations
-  walletLedger    WalletTransaction[]
-  bookings        Booking[] // Hotel bookings (legacy)
-  flightBookings  FlightBooking[] // Flight bookings (legacy)
-  unifiedBookings UnifiedBooking[] // New unified bookings
-  cart            Cart? // One-to-one with cart
-  reviews         Review[]
-  payments        Payment[]
-
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  couponUsages   CouponUsage[]
-  notifications  Notification[]
-  travelerPhotos TravelerPhoto[]
-
-  @@index([email])
-  @@index([role, isActive])
-  @@index([deletedAt])
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
 }
 
-// ==================== HOTEL SYSTEM (Existing - Enhanced) ====================
+enum NotificationType {
+  BOOKING_CONFIRMATION
+  BOOKING_REMINDER
+  BOOKING_CANCELLATION
+  PAYMENT_RECEIPT
+  PAYMENT_FAILED
+  REVIEW_RESPONSE
+  PROMOTION
+  SYSTEM_ALERT
+  VENDOR_APPROVED
+  VENDOR_REJECTED
+  VENDOR_SUSPENDED
+  KYC_VERIFIED
+  KYC_REJECTED
+}
 
-model Room {
-  id         Int    @id @default(autoincrement())
-  roomNumber String @unique
-  floor      Int?
+// ==================== USER & AUTH ====================
 
-  type     RoomType
-  capacity Int      @default(1)
-  bedType  String?
+model User {
+  id              String    @id @default(uuid())
+  name            String
+  email           String    @unique
+  password        String
+  role            Role      @default(customer)
+  address         String?
+  phoneNumber     String?   @unique
+  isActive        Boolean   @default(true)
+  isEmailVerified Boolean   @default(false)
+  isPhoneVerified Boolean   @default(false)
+  profileImage    String?
+  lastLoginAt     DateTime?
+  walletBalance   Decimal   @default(0) @db.Decimal(12, 2)
 
-  price  Decimal    @db.Decimal(12, 2) // Changed from 10,2 to 12,2
-  status RoomStatus @default(available)
-
-  amenities   String[]
-  images      String[]
-  description String?  @db.Text
+  // KYC summary fields
+  kycStatus         KYCStatus @default(NOT_SUBMITTED)
+  kycSubmittedAt    DateTime?
+  kycVerifiedAt     DateTime?
+  kycRejectedReason String?
 
   // Soft delete
   deletedAt DateTime?
   deletedBy String?
 
+  // Relations — each listed exactly ONCE
+  kyc             UserKYC?
+  addresses       Address[]
+  refreshTokens   RefreshToken[]
+  otps            OTP[]
+  pushTokens      PushToken[]
+  savedItems      SavedItem[]
+  vendorProfile   Vendor?
+  walletLedger    WalletTransaction[]
+  bookings        Booking[]
+  flightBookings  FlightBooking[]
+  unifiedBookings UnifiedBooking[]
+  cart            Cart?
+  carRentals      CarRental[]
+  reviews         Review[]
+  payments        Payment[]
+  couponUsages    CouponUsage[]
+  notifications   Notification[]
+  travelerPhotos  TravelerPhoto[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Relations
+  @@index([email])
+  @@index([role, isActive])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model UserKYC {
+  id               String    @id @default(uuid())
+  userId           String    @unique
+  idType           IDType
+  idNumber         String
+  idExpiryDate     DateTime?
+  idFrontImageUrl  String
+  idBackImageUrl   String?
+  selfieImageUrl   String
+  bvnEnc           String?
+  ninEnc           String?
+  passportNumber   String?
+  passportExpiry   DateTime?
+  verifiedBy       String?
+  verificationNote String?
+  riskScore        Float?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("user_kyc")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  isRevoked Boolean  @default(false)
+  ipAddress String?
+  userAgent String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model OTP {
+  id        String    @id @default(uuid())
+  userId    String
+  code      String
+  type      OTPType
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, type])
+  @@map("otps")
+}
+
+model PushToken {
+  id       String @id @default(uuid())
+  userId   String
+  token    String @unique
+  platform String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@map("push_tokens")
+}
+
+model Address {
+  id        String  @id @default(uuid())
+  userId    String
+  label     String?
+  street    String
+  city      String
+  state     String
+  country   String  @default("Nigeria")
+  latitude  Float?
+  longitude Float?
+  isDefault Boolean @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("addresses")
+}
+
+model SavedItem {
+  id          String      @id @default(uuid())
+  userId      String
+  serviceType ServiceType
+  serviceId   String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, serviceType, serviceId])
+  @@map("saved_items")
+}
+
+// ==================== VENDOR ====================
+
+model Vendor {
+  id                 String       @id @default(uuid())
+  userId             String       @unique
+  vendorType         VendorType
+  businessName       String
+  businessEmail      String
+  businessPhone      String
+  businessAddress    String
+  city               String
+  state              String
+  country            String
+  website            String?
+  yearEstablished    Int?
+  description        String?
+  registrationNumber String
+  taxIdEnc           String?
+  licenseNumber      String?
+  businessRegDocUrl  String?
+  ownerIdDocUrl      String?
+  taxDocUrl          String?
+  licenseDocUrl      String?
+  status             VendorStatus @default(PENDING)
+  submittedAt        DateTime?
+  reviewedAt         DateTime?
+  reviewedBy         String?
+  rejectionReason    String?
+  suspensionReason   String?
+  payoutAccountName  String?
+  payoutBankName     String?
+  payoutAccountEnc   String?
+  payoutProvider     String?
+  payoutProviderId   String?
+  avgRating          Float        @default(0)
+  totalReviews       Int          @default(0)
+
+  user               User                @relation(fields: [userId], references: [id])
+  hotel              Hotel?
+  carStore           CarStore?
+  airline            Airline?
+  attractionOperator AttractionOperator?
+  notifications      Notification[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([vendorType, status])
+  @@map("vendors")
+}
+
+// ==================== HOTEL ====================
+
+model Hotel {
+  id            String   @id @default(uuid())
+  vendorId      String   @unique
+  name          String
+  slug          String   @unique
+  description   String   @db.Text
+  starRating    Int
+  checkInTime   String
+  checkOutTime  String
+  address       String
+  city          String
+  state         String
+  country       String
+  latitude      Float
+  longitude     Float
+  googlePlaceId String?
+  coverImageUrl String?
+  isActive      Boolean  @default(true)
+  isApproved    Boolean  @default(false)
+  avgRating     Float    @default(0)
+  totalReviews  Int      @default(0)
+  totalRooms    Int      @default(0)
+  amenities     String[]
+
+  vendor         Vendor         @relation(fields: [vendorId], references: [id])
+  images         HotelImage[]
+  policy         HotelPolicy?
+  roomCategories RoomCategory[]
+  rooms          Room[]
+  bookings       Booking[]
+
+  operatingHours HotelOperatingHours[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([city, country])
+  @@index([isActive, isApproved])
+  @@map("hotels")
+}
+
+model HotelImage {
+  id        String  @id @default(uuid())
+  hotelId   String
+  url       String
+  caption   String?
+  isPrimary Boolean @default(false)
+  sortOrder Int     @default(0)
+
+  hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+
+  @@map("hotel_images")
+}
+
+model HotelPolicy {
+  id                 String  @id @default(uuid())
+  hotelId            String  @unique
+  cancellationPolicy String  @db.Text
+  petPolicy          String?
+  smokingPolicy      String?
+  childPolicy        String?
+  extraBedPolicy     String?
+
+  hotel Hotel @relation(fields: [hotelId], references: [id])
+
+  @@map("hotel_policies")
+}
+
+model HotelOperatingHours {
+  id        String  @id @default(uuid())
+  hotelId   String
+  dayOfWeek Int
+  openTime  String
+  closeTime String
+  isClosed  Boolean @default(false)
+
+  hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+
+  @@map("hotel_operating_hours")
+}
+
+// RoomCategory replaces the old RoomType model (avoids name clash with RoomTypeEnum)
+model RoomCategory {
+  id                String   @id @default(uuid())
+  hotelId           String
+  name              String
+  description       String?
+  bedType           BedType
+  maxOccupancy      Int
+  sizeSqm           Float?
+  basePricePerNight Decimal  @db.Decimal(12, 2)
+  discountPrice     Decimal? @db.Decimal(12, 2)
+  amenities         String[]
+  images            String[]
+  isActive          Boolean  @default(true)
+  totalCount        Int
+
+  hotel    Hotel     @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  rooms    Room[]
   bookings Booking[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([hotelId, isActive])
+  @@map("room_categories")
+}
+
+model Room {
+  id             String       @id @default(uuid())
+  roomNumber     String       @unique
+  floor          Int?
+  hotelId        String?
+  roomCategoryId String?
+  type           RoomTypeEnum
+  capacity       Int          @default(1)
+  bedType        String?
+  price          Decimal      @db.Decimal(12, 2)
+  status         RoomStatus   @default(available)
+  amenities      String[]
+  images         String[]
+  description    String?      @db.Text
+  deletedAt      DateTime?
+  deletedBy      String?
+
+  hotel        Hotel?        @relation(fields: [hotelId], references: [id])
+  roomCategory RoomCategory? @relation(fields: [roomCategoryId], references: [id])
+  bookings     Booking[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([status])
   @@index([type])
+  @@index([hotelId])
   @@index([deletedAt])
+  @@map("rooms")
 }
 
 model Booking {
-  id String @id @default(uuid())
-
-  user   User   @relation(fields: [userId], references: [id])
-  userId String
-  room   Room   @relation(fields: [roomId], references: [id])
-  roomId Int
-
-  checkInDate    DateTime
-  checkOutDate   DateTime
-  actualCheckIn  DateTime?
-  actualCheckOut DateTime?
-
-  totalPrice    Decimal       @db.Decimal(12, 2) // Changed precision
-  depositAmount Decimal       @default(0) @db.Decimal(12, 2)
-  paymentStatus PaymentStatus @default(PENDING)
-
-  status          BookingStatus @default(pending)
-  numberOfGuests  Int           @default(1)
-  specialRequests String?       @db.Text
-  cancelledAt     DateTime?
-
-  // Link to unified booking system (nullable for backward compatibility)
+  id               String        @id @default(uuid())
+  userId           String
+  roomId           String
+  hotelId          String?
+  roomCategoryId   String?
+  checkInDate      DateTime
+  checkOutDate     DateTime
+  actualCheckIn    DateTime?
+  actualCheckOut   DateTime?
+  totalPrice       Decimal       @db.Decimal(12, 2)
+  depositAmount    Decimal       @default(0) @db.Decimal(12, 2)
+  paymentStatus    PaymentStatus @default(PENDING)
+  status           BookingStatus @default(pending)
+  numberOfGuests   Int           @default(1)
+  specialRequests  String?       @db.Text
+  cancelledAt      DateTime?
   unifiedBookingId String?
-  unifiedBooking   UnifiedBooking? @relation(fields: [unifiedBookingId], references: [id])
 
-  // Relations
+  user               User                @relation(fields: [userId], references: [id])
+  room               Room                @relation(fields: [roomId], references: [id])
+  hotel              Hotel?              @relation(fields: [hotelId], references: [id])
+  roomCategory       RoomCategory?       @relation(fields: [roomCategoryId], references: [id])
+  unifiedBooking     UnifiedBooking?     @relation(fields: [unifiedBookingId], references: [id])
   payments           Payment[]
   walletTransactions WalletTransaction[]
 
@@ -263,31 +643,228 @@ model Booking {
   updatedAt DateTime @updatedAt
 
   @@index([userId])
+  @@index([hotelId])
   @@index([roomId, checkInDate, checkOutDate])
   @@index([status])
   @@index([unifiedBookingId])
+  @@map("bookings")
 }
 
-// ==================== FLIGHT SYSTEM (Existing - Enhanced) ====================
+// ==================== CAR RENTAL ====================
+
+model CarStore {
+  id          String   @id @default(uuid())
+  vendorId    String   @unique
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  isApproved  Boolean  @default(false)
+  images      String[]
+
+  vendor          Vendor           @relation(fields: [vendorId], references: [id])
+  pickupLocations PickupLocation[]
+  carCategories   CarCategory[]
+  cars            Car[]
+  operatingHours  StoreHours[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("car_stores")
+}
+
+model PickupLocation {
+  id         String  @id @default(uuid())
+  carStoreId String
+  name       String
+  address    String
+  latitude   Float?
+  longitude  Float?
+  isActive   Boolean @default(true)
+
+  carStore CarStore @relation(fields: [carStoreId], references: [id])
+  cars     Car[]
+
+  @@map("pickup_locations")
+}
+
+model CarCategory {
+  id          String  @id @default(uuid())
+  carStoreId  String
+  name        String
+  description String?
+  pricePerDay Decimal @db.Decimal(12, 2)
+  imageUrl    String?
+
+  carStore CarStore @relation(fields: [carStoreId], references: [id])
+  cars     Car[]
+
+  @@map("car_categories")
+}
+
+model Car {
+  id               String       @id @default(uuid())
+  carStoreId       String
+  categoryId       String
+  pickupLocationId String?
+  make             String
+  model            String
+  year             Int
+  color            String?
+  plateNumber      String       @unique
+  transmission     Transmission @default(AUTOMATIC)
+  seats            Int
+  status           CarStatus    @default(AVAILABLE)
+  images           String[]
+  features         String[]
+  depositRequired  Decimal      @default(0) @db.Decimal(12, 2)
+  deletedAt        DateTime?
+  deletedBy        String?
+
+  carStore       CarStore        @relation(fields: [carStoreId], references: [id])
+  category       CarCategory     @relation(fields: [categoryId], references: [id])
+  pickupLocation PickupLocation? @relation(fields: [pickupLocationId], references: [id])
+  carRentals     CarRental[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("cars")
+}
+
+model CarRental {
+  id               String        @id @default(uuid())
+  carId            String
+  userId           String
+  pickupDate       DateTime
+  returnDate       DateTime
+  actualReturn     DateTime?
+  totalPrice       Decimal       @db.Decimal(12, 2)
+  depositPaid      Decimal       @default(0) @db.Decimal(12, 2)
+  status           BookingStatus @default(pending)
+  paymentStatus    PaymentStatus @default(PENDING)
+  notes            String?
+  unifiedBookingId String?
+
+  car            Car             @relation(fields: [carId], references: [id])
+  user           User            @relation(fields: [userId], references: [id])
+  unifiedBooking UnifiedBooking? @relation(fields: [unifiedBookingId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([carId])
+  @@index([userId])
+  @@index([unifiedBookingId])
+  @@map("car_rentals")
+}
+
+model StoreHours {
+  id         String  @id @default(uuid())
+  carStoreId String
+  dayOfWeek  Int
+  openTime   String
+  closeTime  String
+  isClosed   Boolean @default(false)
+
+  carStore CarStore @relation(fields: [carStoreId], references: [id])
+
+  @@map("store_hours")
+}
+
+// ==================== AIRLINE & FLIGHT ====================
+
+model Airline {
+  id          String  @id @default(uuid())
+  vendorId    String  @unique
+  name        String
+  iataCode    String  @unique
+  logoUrl     String?
+  description String?
+  isActive    Boolean @default(true)
+  isApproved  Boolean @default(false)
+
+  vendor  Vendor   @relation(fields: [vendorId], references: [id])
+  planes  Plane[]
+  flights Flight[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("airlines")
+}
+
+model Plane {
+  id           String      @id @default(uuid())
+  airlineId    String
+  registration String      @unique
+  model        String
+  manufacturer String
+  totalSeats   Int
+  status       PlaneStatus @default(ACTIVE)
+
+  airline  Airline   @relation(fields: [airlineId], references: [id])
+  flights  Flight[]
+  seatMaps SeatMap[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("planes")
+}
+
+model SeatMap {
+  id         String    @id @default(uuid())
+  planeId    String
+  seatNumber String
+  class      SeatClass
+  isWindow   Boolean   @default(false)
+  isAisle    Boolean   @default(false)
+  isExtraLeg Boolean   @default(false)
+
+  plane           Plane            @relation(fields: [planeId], references: [id])
+  bookingSegments BookingSegment[]
+
+  @@unique([planeId, seatNumber])
+  @@map("seat_maps")
+}
 
 model Flight {
   id               String       @id @default(uuid())
   flightNumber     String       @unique
+  airlineId        String?
+  planeId          String?
   departureAirport String
   arrivalAirport   String
+  originCity       String?
+  destinationCity  String?
   departureTime    DateTime
   arrivalTime      DateTime
-  price            Decimal      @db.Decimal(12, 2) // Changed precision
+  durationMinutes  Int?
+  price            Decimal      @db.Decimal(12, 2)
   status           FlightStatus @default(SCHEDULED)
+  gateNumber       String?
+  terminal         String?
+  delayMinutes     Int          @default(0)
+  delayReason      String?
+  economyPrice     Decimal?     @db.Decimal(12, 2)
+  economySeats     Int          @default(0)
+  economySold      Int          @default(0)
+  businessPrice    Decimal?     @db.Decimal(12, 2)
+  businessSeats    Int          @default(0)
+  businessSold     Int          @default(0)
+  firstClassPrice  Decimal?     @db.Decimal(12, 2)
+  firstClassSeats  Int          @default(0)
+  firstClassSold   Int          @default(0)
+  deletedAt        DateTime?
+  deletedBy        String?
 
-  // Soft delete
-  deletedAt DateTime?
-  deletedBy String?
-
-  // Relations
+  airline         Airline?         @relation(fields: [airlineId], references: [id])
+  plane           Plane?           @relation(fields: [planeId], references: [id])
   seats           Seat[]
   bookings        FlightBooking[]
   bookingSegments BookingSegment[]
+  addOns          AddOn[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -295,20 +872,20 @@ model Flight {
   @@index([departureAirport, arrivalAirport])
   @@index([departureTime, status])
   @@index([deletedAt])
+  @@map("flights")
 }
 
 model Seat {
-  id          String  @id @default(uuid())
-  flightId    String
-  seatNumber  String
-  class       String // Economy, Business, First
-  isAvailable Boolean @default(true)
-  price       Decimal @db.Decimal(12, 2) // Changed precision
-
-  // Relations
-  flightBooking   FlightBooking?   @relation(fields: [flightBookingId], references: [id])
-  flight          Flight           @relation(fields: [flightId], references: [id])
+  id              String  @id @default(uuid())
+  flightId        String
+  seatNumber      String
+  class           String
+  isAvailable     Boolean @default(true)
+  price           Decimal @db.Decimal(12, 2)
   flightBookingId String?
+
+  flight          Flight           @relation(fields: [flightId], references: [id])
+  flightBooking   FlightBooking?   @relation(fields: [flightBookingId], references: [id])
   bookingSegments BookingSegment[]
 
   createdAt DateTime @default(now())
@@ -316,6 +893,7 @@ model Seat {
 
   @@unique([flightId, seatNumber])
   @@index([flightId, isAvailable])
+  @@map("seats")
 }
 
 model Airplane {
@@ -328,151 +906,165 @@ model Airplane {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@map("airplanes")
 }
 
 model FlightBooking {
-  id String @id @default(uuid())
-
-  user   User   @relation(fields: [userId], references: [id])
-  userId String
-
-  // Link to unified booking system
+  id               String              @id @default(uuid())
+  userId           String
+  flightId         String?
+  totalPrice       Decimal             @default(0) @db.Decimal(12, 2)
+  status           FlightBookingStatus @default(BOOKED)
+  qrCode           String?             @db.Text
+  boardingPassUrl  String?
   unifiedBookingId String?
-  unifiedBooking   UnifiedBooking? @relation(fields: [unifiedBookingId], references: [id])
 
-  segments BookingSegment[]
-  addOns   BookingAddOn[]
-
-  totalPrice Decimal             @default(0) @db.Decimal(12, 2)
-  status     FlightBookingStatus @default(BOOKED)
-
-  qrCode          String? @db.Text
-  boardingPassUrl String?
-
-  // Relations
-  seats Seat[]
+  user           User             @relation(fields: [userId], references: [id])
+  flight         Flight?          @relation(fields: [flightId], references: [id])
+  unifiedBooking UnifiedBooking?  @relation(fields: [unifiedBookingId], references: [id])
+  seats          Seat[]
+  segments       BookingSegment[]
+  addOnBookings  BookingAddOn[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  flight    Flight?  @relation(fields: [flightId], references: [id])
-  flightId  String?
 
   @@index([userId])
   @@index([status])
   @@index([unifiedBookingId])
+  @@map("flight_bookings")
 }
 
 model BookingSegment {
-  id              String        @id @default(uuid())
+  id              String  @id @default(uuid())
   flightBookingId String
-  flightBooking   FlightBooking @relation(fields: [flightBookingId], references: [id])
+  flightId        String
+  seatId          String
+  seatMapId       String?
 
-  flightId String
-  flight   Flight @relation(fields: [flightId], references: [id])
-
-  seatId String
-  seat   Seat   @relation(fields: [seatId], references: [id])
+  flightBooking FlightBooking @relation(fields: [flightBookingId], references: [id])
+  flight        Flight        @relation(fields: [flightId], references: [id])
+  seat          Seat          @relation(fields: [seatId], references: [id])
+  seatMap       SeatMap?      @relation(fields: [seatMapId], references: [id])
 
   @@unique([flightBookingId, flightId, seatId])
-}
-
-model BookingAddOn {
-  id              String        @id @default(uuid())
-  flightBookingId String
-  flightBooking   FlightBooking @relation(fields: [flightBookingId], references: [id])
-
-  addOnId String
-  addOn   AddOn  @relation(fields: [addOnId], references: [id])
-
-  quantity Int @default(1)
-
-  @@unique([flightBookingId, addOnId])
+  @@map("booking_segments")
 }
 
 model AddOn {
-  id    String    @id @default(uuid())
-  type  AddOnType
-  name  String
-  price Decimal   @db.Decimal(12, 2)
+  id       String    @id @default(uuid())
+  flightId String?
+  type     AddOnType
+  name     String
+  price    Decimal   @db.Decimal(12, 2)
 
+  flight   Flight?        @relation(fields: [flightId], references: [id])
   bookings BookingAddOn[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@map("add_ons")
 }
 
-// ==================== ATTRACTION SYSTEM (NEW) ====================
+model BookingAddOn {
+  id              String @id @default(uuid())
+  flightBookingId String
+  addOnId         String
+  quantity        Int    @default(1)
 
-model TouristAttraction {
-  id String @id @default(uuid())
+  flightBooking FlightBooking @relation(fields: [flightBookingId], references: [id])
+  addOn         AddOn         @relation(fields: [addOnId], references: [id])
 
+  @@unique([flightBookingId, addOnId])
+  @@map("booking_add_ons")
+}
+
+// ==================== ATTRACTION ====================
+
+model AttractionOperator {
+  id          String  @id @default(uuid())
+  vendorId    String  @unique
   name        String
-  description String             @db.Text
-  category    AttractionCategory
+  description String?
+  isActive    Boolean @default(true)
+  isApproved  Boolean @default(false)
 
-  address   String
-  city      String
-  country   String
-  latitude  Float?
-  longitude Float?
-
-  isBookable         Boolean @default(true)
-  maxCapacityPerSlot Int     @default(50)
-  minAdvanceHours    Int     @default(2)
-  maxAdvanceDays     Int     @default(90)
-
-  basePrice      Decimal @db.Decimal(12, 2)
-  dynamicPricing Boolean @default(false)
-
-  cancellationWindowHours Int @default(24)
-  refundPercentage        Int @default(90)
-
-  contactPhone String?
-  contactEmail String?
-  website      String?
-  images       String[]
-
-  averageDurationMinutes Int @default(120)
-
-  metadata Json?
-
-  openingHours          String
-  additionalInformation String? @db.Text
-  relatedAttractionIds  String?
-  travelersPhotos       Json?
-
-  isActive  Boolean   @default(true)
-  deletedAt DateTime?
-  deletedBy String?
+  vendor      Vendor              @relation(fields: [vendorId], references: [id])
+  attractions TouristAttraction[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  timeSlots                 TouristAttractionTimeSlot[]
-  bookings                  TouristAttractionBooking[]
-  reviews                   Review[]
-  travelerPhotos            TravelerPhoto[]
-  attractionAmenityMappings TouristAttractionAmenityMapping[]
-  attractionReasonMappings  TouristAttractionReasonMapping[]
+  @@map("attraction_operators")
+}
 
-  // Self-referencing relations
-  originalRelations RelatedTouristAttraction[] @relation("original")
-  relatedRelations  RelatedTouristAttraction[] @relation("related")
+model TouristAttraction {
+  id                      String             @id @default(uuid())
+  operatorId              String?
+  slug                    String?            @unique
+  name                    String
+  description             String             @db.Text
+  category                AttractionCategory
+  address                 String
+  city                    String
+  country                 String
+  latitude                Float?
+  longitude               Float?
+  isBookable              Boolean            @default(true)
+  maxCapacityPerSlot      Int                @default(50)
+  minAdvanceHours         Int                @default(2)
+  maxAdvanceDays          Int                @default(90)
+  averageDurationMinutes  Int                @default(120)
+  basePrice               Decimal            @db.Decimal(12, 2)
+  dynamicPricing          Boolean            @default(false)
+  cancellationWindowHours Int                @default(24)
+  refundPercentage        Int                @default(90)
+  contactPhone            String?
+  contactEmail            String?
+  website                 String?
+  images                  String[]
+  openingHours            String
+  additionalInformation   String?            @db.Text
+  included                String[]
+  notIncluded             String[]
+  whatToBring             String[]
+  relatedAttractionIds    String?
+  travelersPhotos         Json?
+  metadata                Json?
+  averageRating           Float              @default(0)
+  totalReviews            Int                @default(0)
+  isActive                Boolean            @default(true)
+  deletedAt               DateTime?
+  deletedBy               String?
+
+  operator        AttractionOperator?               @relation(fields: [operatorId], references: [id])
+  timeSlots       TouristAttractionTimeSlot[]
+  bookings        TouristAttractionBooking[]
+  reviews         Review[]
+  travelerPhotos  TravelerPhoto[]
+  amenityMappings TouristAttractionAmenityMapping[]
+  reasonMappings  TouristAttractionReasonMapping[]
+  relatedFrom     RelatedTouristAttraction[]        @relation("original")
+  relatedTo       RelatedTouristAttraction[]        @relation("related")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([city, country])
   @@index([category])
   @@index([isActive])
   @@index([deletedAt])
+  @@map("tourist_attractions")
 }
 
 model RelatedTouristAttraction {
-  id String @id @default(uuid())
-
+  id                  String  @id @default(uuid())
   attractionId        String
   relatedAttractionId String
-
-  distanceKm Float?
-  travelTime String?
+  distanceKm          Float?
+  travelTime          String?
 
   attraction        TouristAttraction @relation("original", fields: [attractionId], references: [id])
   relatedAttraction TouristAttraction @relation("related", fields: [relatedAttractionId], references: [id])
@@ -482,76 +1074,56 @@ model RelatedTouristAttraction {
   @@unique([attractionId, relatedAttractionId])
   @@index([attractionId])
   @@index([relatedAttractionId])
+  @@map("related_tourist_attractions")
 }
 
 model TouristAttractionTimeSlot {
-  id String @id @default(uuid())
-
-  attraction   TouristAttraction @relation(fields: [attractionId], references: [id])
-  attractionId String
-
-  date      DateTime @db.Date
-  startTime String // "10:00"
-  endTime   String // "12:00"
-
-  availableSpots Int @default(50)
-  maxSpots       Int @default(50)
-
-  // Pricing override
+  id              String   @id @default(uuid())
+  attractionId    String
+  date            DateTime @db.Date
+  startTime       String
+  endTime         String
+  availableSpots  Int      @default(50)
+  maxSpots        Int      @default(50)
+  reservedSpots   Int      @default(0)
+  confirmedSpots  Int      @default(0)
   priceMultiplier Decimal  @default(1.0) @db.Decimal(3, 2)
   specialPrice    Decimal? @db.Decimal(12, 2)
+  isBlocked       Boolean  @default(false)
+  isHoliday       Boolean  @default(false)
 
-  // Status
-  isBlocked Boolean @default(false)
-  isHoliday Boolean @default(false)
-
-  // Booking tracking (for inventory management)
-  reservedSpots  Int @default(0) // Temporarily in carts
-  confirmedSpots Int @default(0) // Actually booked
+  attraction TouristAttraction          @relation(fields: [attractionId], references: [id])
+  bookings   TouristAttractionBooking[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Relations
-  bookings TouristAttractionBooking[]
-
   @@unique([attractionId, date, startTime])
   @@index([attractionId, date, isBlocked])
   @@index([date, availableSpots])
+  @@map("tourist_attraction_time_slots")
 }
 
 model TouristAttractionBooking {
-  id String @id @default(uuid())
-
-  // Link to unified booking system
-  unifiedBooking   UnifiedBooking @relation(fields: [unifiedBookingId], references: [id])
+  id               String                  @id @default(uuid())
   unifiedBookingId String
+  attractionId     String
+  timeSlotId       String
+  numberOfPeople   Int
+  visitorNames     String[]
+  pricePerPerson   Decimal                 @db.Decimal(12, 2)
+  subtotal         Decimal                 @db.Decimal(12, 2)
+  tax              Decimal                 @db.Decimal(12, 2)
+  totalPrice       Decimal                 @db.Decimal(12, 2)
+  qrCode           String?                 @db.Text
+  ticketNumber     String?                 @unique
+  entryScanned     Boolean                 @default(false)
+  scannedAt        DateTime?
+  status           AttractionBookingStatus @default(CONFIRMED)
 
-  // Attraction details
-  attraction   TouristAttraction @relation(fields: [attractionId], references: [id])
-  attractionId String
-
-  timeSlot   TouristAttractionTimeSlot @relation(fields: [timeSlotId], references: [id])
-  timeSlotId String
-
-  // Customer details
-  numberOfPeople Int
-  visitorNames   String[] // Array of names for tickets
-
-  // Pricing snapshot (from time of booking)
-  pricePerPerson Decimal @db.Decimal(12, 2)
-  subtotal       Decimal @db.Decimal(12, 2)
-  tax            Decimal @db.Decimal(12, 2)
-  totalPrice     Decimal @db.Decimal(12, 2)
-
-  // Ticket info
-  qrCode       String?   @db.Text
-  ticketNumber String?   @unique
-  entryScanned Boolean   @default(false)
-  scannedAt    DateTime?
-
-  // Status
-  status AttractionBookingStatus @default(CONFIRMED)
+  unifiedBooking UnifiedBooking            @relation(fields: [unifiedBookingId], references: [id])
+  attraction     TouristAttraction         @relation(fields: [attractionId], references: [id])
+  timeSlot       TouristAttractionTimeSlot @relation(fields: [timeSlotId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -560,18 +1132,17 @@ model TouristAttractionBooking {
   @@index([timeSlotId, status])
   @@index([ticketNumber])
   @@index([attractionId, status])
+  @@map("tourist_attraction_bookings")
 }
 
 model TravelerPhoto {
-  id String @id @default(uuid())
-
-  attractionId String @map("attraction_id")
-  userId       String @map("user_id")
-
-  imageUrl   String
-  caption    String?
-  likes      Int     @default(0)
-  isApproved Boolean @default(false)
+  id           String  @id @default(uuid())
+  attractionId String  @map("attraction_id")
+  userId       String  @map("user_id")
+  imageUrl     String
+  caption      String?
+  likes        Int     @default(0)
+  isApproved   Boolean @default(false)
 
   attraction TouristAttraction @relation(fields: [attractionId], references: [id])
   user       User              @relation(fields: [userId], references: [id])
@@ -586,8 +1157,7 @@ model TravelerPhoto {
 }
 
 model TouristAttractionAmenity {
-  id String @id @default(uuid())
-
+  id          String  @id @default(uuid())
   name        String  @unique
   description String?
   icon        String?
@@ -596,6 +1166,8 @@ model TouristAttractionAmenity {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@map("tourist_attraction_amenities")
 }
 
 model TouristAttractionAmenityMapping {
@@ -611,8 +1183,7 @@ model TouristAttractionAmenityMapping {
 }
 
 model TouristAttractionReason {
-  id String @id @default(uuid())
-
+  id          String  @id @default(uuid())
   reason      String
   description String?
   icon        String?
@@ -621,6 +1192,8 @@ model TouristAttractionReason {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@map("tourist_attraction_reasons")
 }
 
 model TouristAttractionReasonMapping {
@@ -632,79 +1205,56 @@ model TouristAttractionReasonMapping {
   reason     TouristAttractionReason @relation(fields: [reasonId], references: [id])
 
   @@unique([attractionId, reasonId])
-  @@map("attraction_reasons")
+  @@map("attraction_reason_mappings")
 }
 
-// ==================== UNIFIED BOOKING SYSTEM (NEW) ====================
+// ==================== UNIFIED BOOKING ====================
 
 model UnifiedBooking {
-  id String @id @default(uuid())
-
-  // User relation
-  user   User   @relation(fields: [userId], references: [id])
-  userId String
-
-  // Polymorphic service reference
-  serviceType ServiceType
-
-  // Service-specific references (nullable polymorphic foreign keys)
-  hotelBookingId      String? // References Booking.id
-  flightBookingId     String? // References FlightBooking.id
-  attractionBookingId String? // References AttractionBooking.id
-  carBookingId        String? // For future car rental
-
-  // Booking timeline
-  bookingDate      DateTime  @default(now())
-  serviceStartDate DateTime // Flight departure, hotel check-in, attraction time
-  serviceEndDate   DateTime? // Hotel check-out, flight return (null for attractions)
-
-  // Pricing
-  subtotal   Decimal @db.Decimal(12, 2)
-  tax        Decimal @db.Decimal(12, 2)
-  serviceFee Decimal @db.Decimal(12, 2)
-  totalPrice Decimal @db.Decimal(12, 2)
-  currency   String  @default("NGN")
-
-  // Discount tracking
-  couponCode     String?
-  discountAmount Decimal? @db.Decimal(12, 2)
-  discountReason String?
-
-  // Status
-  bookingStatus UnifiedBookingStatus @default(PENDING_PAYMENT)
-  paymentStatus PaymentStatus        @default(PENDING)
-
-  // Cancellation
+  id                   String               @id @default(uuid())
+  userId               String
+  serviceType          ServiceType
+  hotelBookingId       String?
+  flightBookingId      String?
+  attractionBookingId  String?
+  carBookingId         String?
+  bookingDate          DateTime             @default(now())
+  serviceStartDate     DateTime
+  serviceEndDate       DateTime?
+  subtotal             Decimal              @db.Decimal(12, 2)
+  tax                  Decimal              @db.Decimal(12, 2)
+  serviceFee           Decimal              @db.Decimal(12, 2)
+  totalPrice           Decimal              @db.Decimal(12, 2)
+  currency             String               @default("NGN")
+  couponCode           String?
+  discountAmount       Decimal?             @db.Decimal(12, 2)
+  discountReason       String?
+  bookingStatus        UnifiedBookingStatus @default(PENDING_PAYMENT)
+  paymentStatus        PaymentStatus        @default(PENDING)
   cancellationDeadline DateTime?
   cancelledAt          DateTime?
   cancelledBy          String?
   cancellationReason   String?
-  refundAmount         Decimal?  @db.Decimal(12, 2)
+  refundAmount         Decimal?             @db.Decimal(12, 2)
   refundProcessedAt    DateTime?
+  bundleId             String?
+  cartId               String?
+  referenceCode        String               @unique
+  specialRequests      String?              @db.Text
+  metadata             Json?
 
-  // Cross-service bundle (multiple bookings from same cart)
-  bundleId String?
-  cartId   String?
-
-  // User-friendly identifiers
-  referenceCode String @unique
-
-  // Additional info
-  specialRequests String? @db.Text
-  metadata        Json? // Flexible field for service-specific data
-
-  // Audit
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
+  user               User                       @relation(fields: [userId], references: [id])
   payments           Payment[]
   walletTransactions WalletTransaction[]
   reviews            Review[]
   bookings           Booking[]
   flightBookings     FlightBooking[]
   attractionBookings TouristAttractionBooking[]
+  carRentals         CarRental[]
   couponUsages       CouponUsage[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([userId, bookingStatus])
   @@index([serviceType, serviceStartDate])
@@ -713,40 +1263,30 @@ model UnifiedBooking {
   @@index([bookingStatus, paymentStatus])
   @@index([cancellationDeadline])
   @@index([serviceStartDate, bookingStatus])
+  @@map("unified_bookings")
 }
 
-// ==================== CART SYSTEM (NEW) ====================
+// ==================== CART ====================
 
 model Cart {
-  id String @id @default(uuid())
-
-  user   User   @relation(fields: [userId], references: [id])
-  userId String @unique // One cart per user
-
-  items CartItem[]
-
-  // Pricing summary
-  subtotal    Decimal @db.Decimal(12, 2)
-  tax         Decimal @db.Decimal(12, 2)
-  serviceFee  Decimal @db.Decimal(12, 2)
-  totalAmount Decimal @db.Decimal(12, 2)
-  currency    String  @default("NGN")
-
-  // Discounts
-  couponCode     String?
-  discountAmount Decimal? @db.Decimal(12, 2)
-  discountId     String?
-
-  // Expiry and tracking
-  expiresAt   DateTime // 24 hours from last activity
-  abandonedAt DateTime? // When cart was marked abandoned
-
-  // Status
-  status CartStatus @default(ACTIVE)
-
-  // Checkout tracking
+  id                String     @id @default(uuid())
+  userId            String     @unique
+  items             CartItem[]
+  subtotal          Decimal    @db.Decimal(12, 2)
+  tax               Decimal    @db.Decimal(12, 2)
+  serviceFee        Decimal    @db.Decimal(12, 2)
+  totalAmount       Decimal    @db.Decimal(12, 2)
+  currency          String     @default("NGN")
+  couponCode        String?
+  discountAmount    Decimal?   @db.Decimal(12, 2)
+  discountId        String?
+  expiresAt         DateTime
+  abandonedAt       DateTime?
+  status            CartStatus @default(ACTIVE)
   checkedOutAt      DateTime?
   checkoutSessionId String?
+
+  user User @relation(fields: [userId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -754,32 +1294,23 @@ model Cart {
   @@index([userId, status])
   @@index([expiresAt])
   @@index([status, abandonedAt])
+  @@map("carts")
 }
 
 model CartItem {
-  id String @id @default(uuid())
+  id                     String      @id @default(uuid())
+  cartId                 String
+  serviceType            ServiceType
+  serviceId              String
+  bookingData            Json
+  unitPrice              Decimal     @db.Decimal(12, 2)
+  quantity               Int         @default(1)
+  totalPrice             Decimal     @db.Decimal(12, 2)
+  inventoryHoldExpiresAt DateTime
+  holdId                 String?
+  notes                  String?
 
-  cart   Cart   @relation(fields: [cartId], references: [id])
-  cartId String
-
-  // Polymorphic item
-  serviceType ServiceType
-  serviceId   String // ID of the specific service item (attraction, flight, etc.)
-
-  // Snapshot of booking data at add-to-cart time
-  bookingData Json // Contains all service-specific booking details
-
-  // Pricing at add-to-cart time (locked)
-  unitPrice  Decimal @db.Decimal(12, 2)
-  quantity   Int     @default(1)
-  totalPrice Decimal @db.Decimal(12, 2)
-
-  // Inventory hold
-  inventoryHoldExpiresAt DateTime // Release hold after this time
-  holdId                 String? // Reference to inventory hold in Redis/DB
-
-  // Metadata
-  notes String?
+  cart Cart @relation(fields: [cartId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -787,126 +1318,104 @@ model CartItem {
   @@unique([cartId, serviceType, serviceId])
   @@index([inventoryHoldExpiresAt])
   @@index([serviceType, serviceId])
+  @@map("cart_items")
 }
 
-// ==================== REVIEW SYSTEM (NEW) ====================
+// ==================== REVIEW ====================
 
 model Review {
-  id String @id @default(uuid())
-
-  user   User   @relation(fields: [userId], references: [id])
-  userId String
-
-  unifiedBooking   UnifiedBooking @relation(fields: [unifiedBookingId], references: [id])
+  id               String      @id @default(uuid())
+  userId           String
   unifiedBookingId String
+  serviceType      ServiceType
+  serviceId        String
+  rating           Int
+  title            String
+  comment          String      @db.Text
+  helpfulCount     Int         @default(0)
+  helpfulVotes     Json?
+  reported         Boolean     @default(false)
+  reportCount      Int         @default(0)
+  reportReason     String?     @db.Text
+  images           String[]
+  ownerResponse    String?     @db.Text
+  responseAt       DateTime?
+  respondedBy      String?
+  isVerified       Boolean     @default(false)
+  isPublished      Boolean     @default(true)
+  moderatedAt      DateTime?
+  moderatedBy      String?
+  moderationNote   String?
+  attractionId     String?
 
-  serviceType ServiceType
-  serviceId   String
-
-  rating  Int
-  title   String
-  comment String @db.Text
-
-  helpfulCount Int   @default(0)
-  helpfulVotes Json?
-
-  reported     Boolean @default(false)
-  reportCount  Int     @default(0)
-  reportReason String? @db.Text
-
-  images String[]
-
-  ownerResponse String?   @db.Text
-  responseAt    DateTime?
-  respondedBy   String?
-
-  isVerified     Boolean   @default(false)
-  isPublished    Boolean   @default(true)
-  moderatedAt    DateTime?
-  moderatedBy    String?
-  moderationNote String?
+  user           User               @relation(fields: [userId], references: [id])
+  unifiedBooking UnifiedBooking     @relation(fields: [unifiedBookingId], references: [id])
+  attraction     TouristAttraction? @relation(fields: [attractionId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  // Remove this line if it exists (line 493 error):
-  // attraction   Attraction? @relation(fields: [attractionId], references: [id])
-  // attractionId String?
-  attraction   TouristAttraction? @relation(fields: [attractionId], references: [id])
-  attractionId String?
 
   @@unique([unifiedBookingId, serviceType])
   @@index([userId])
   @@index([serviceType, serviceId])
   @@index([rating])
   @@index([isPublished, createdAt])
+  @@map("reviews")
 }
 
-// ==================== PAYMENT & FINANCIAL SYSTEMS ====================
+// ==================== PAYMENT ====================
 
 model Payment {
-  id            String        @id @default(uuid())
-  amount        Decimal       @db.Decimal(12, 2)
-  currency      String        @default("NGN")
-  status        PaymentStatus @default(PENDING)
-  paymentMethod PaymentMethod
-
-  transactionId String? @unique
-  reference     String  @unique
-
-  // Link to unified booking system (new)
-  unifiedBooking   UnifiedBooking? @relation(fields: [unifiedBookingId], references: [id])
+  id               String        @id @default(uuid())
+  amount           Decimal       @db.Decimal(12, 2)
+  currency         String        @default("NGN")
+  status           PaymentStatus @default(PENDING)
+  paymentMethod    PaymentMethod
+  transactionId    String?       @unique
+  reference        String        @unique
   unifiedBookingId String?
+  bookingId        String?
+  userId           String?
+  gatewayResponse  Json?
+  failureReason    String?
+  paidAt           DateTime?
+  refundedAmount   Decimal?      @db.Decimal(12, 2)
+  refundedAt       DateTime?
+  refundReference  String?
 
-  // Legacy links (kept for backward compatibility)
-  booking   Booking? @relation(fields: [bookingId], references: [id])
-  bookingId String?
-
-  gatewayResponse Json?
-  failureReason   String?
-  paidAt          DateTime?
-
-  // Refund tracking
-  refundedAmount  Decimal?  @db.Decimal(12, 2)
-  refundedAt      DateTime?
-  refundReference String?
+  unifiedBooking UnifiedBooking? @relation(fields: [unifiedBookingId], references: [id])
+  booking        Booking?        @relation(fields: [bookingId], references: [id])
+  user           User?           @relation(fields: [userId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  user      User?    @relation(fields: [userId], references: [id])
-  userId    String?
 
   @@index([unifiedBookingId])
   @@index([bookingId])
   @@index([transactionId])
   @@index([reference])
   @@index([status])
+  @@map("payments")
 }
 
 model WalletTransaction {
-  id     String @id @default(uuid())
-  user   User   @relation(fields: [userId], references: [id])
-  userId String
-
-  amount        Decimal         @db.Decimal(12, 2) // Changed from Float
-  type          TransactionType
-  balanceBefore Decimal         @db.Decimal(12, 2)
-  balanceAfter  Decimal         @db.Decimal(12, 2)
-
-  description String
-  reference   String @unique
-
-  bookingId String?
-  booking   Booking? @relation(fields: [bookingId], references: [id])
-
-  // Link to unified booking
+  id               String            @id @default(uuid())
+  userId           String
+  amount           Decimal           @db.Decimal(12, 2)
+  type             TransactionType
+  balanceBefore    Decimal           @db.Decimal(12, 2)
+  balanceAfter     Decimal           @db.Decimal(12, 2)
+  description      String
+  reference        String            @unique
+  bookingId        String?
   unifiedBookingId String?
-  unifiedBooking   UnifiedBooking? @relation(fields: [unifiedBookingId], references: [id])
+  fundedBy         String?
+  fundingReason    String?
+  status           TransactionStatus @default(COMPLETED)
 
-  fundedBy      String?
-  fundingReason String?
-
-  status TransactionStatus @default(COMPLETED)
+  user           User            @relation(fields: [userId], references: [id])
+  booking        Booking?        @relation(fields: [bookingId], references: [id])
+  unifiedBooking UnifiedBooking? @relation(fields: [unifiedBookingId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -915,6 +1424,7 @@ model WalletTransaction {
   @@index([reference])
   @@index([unifiedBookingId])
   @@index([createdAt])
+  @@map("wallet_transactions")
 }
 
 model IdempotencyKey {
@@ -929,110 +1439,115 @@ model IdempotencyKey {
 
   @@index([expiresAt])
   @@index([key, status])
+  @@map("idempotency_keys")
 }
 
-// ==================== COUPON/DISCOUNT SYSTEM (OPTIONAL) ====================
+// ==================== COUPON ====================
 
 model Coupon {
-  id String @id @default(uuid())
-
-  code        String  @unique
-  description String?
-
-  discountType  DiscountType
-  discountValue Decimal      @db.Decimal(10, 2) // Percentage or fixed amount
-
-  // Applicable services (null = all services)
+  id                 String        @id @default(uuid())
+  code               String        @unique
+  description        String?
+  discountType       DiscountType
+  discountValue      Decimal       @db.Decimal(10, 2)
   applicableServices ServiceType[]
+  maxUses            Int
+  currentUses        Int           @default(0)
+  maxUsesPerUser     Int           @default(1)
+  validFrom          DateTime
+  validUntil         DateTime
+  minimumSpend       Decimal?      @db.Decimal(12, 2)
+  isActive           Boolean       @default(true)
 
-  // Usage limits
-  maxUses        Int
-  currentUses    Int @default(0)
-  maxUsesPerUser Int @default(1)
-
-  // Validity
-  validFrom  DateTime
-  validUntil DateTime
-
-  // Conditions
-  minimumSpend Decimal? @db.Decimal(12, 2)
-
-  // Status
-  isActive Boolean @default(true)
-
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
   couponUsages CouponUsage[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([code, isActive])
   @@index([validFrom, validUntil])
+  @@map("coupons")
 }
 
 model CouponUsage {
-  id String @id @default(uuid())
-
-  coupon   Coupon @relation(fields: [couponId], references: [id])
-  couponId String
-
-  user   User   @relation(fields: [userId], references: [id])
-  userId String
-
-  unifiedBooking   UnifiedBooking @relation(fields: [unifiedBookingId], references: [id])
+  id               String   @id @default(uuid())
+  couponId         String
+  userId           String
   unifiedBookingId String
+  discountAmount   Decimal  @db.Decimal(12, 2)
+  usedAt           DateTime @default(now())
 
-  discountAmount Decimal @db.Decimal(12, 2)
-
-  usedAt DateTime @default(now())
+  coupon         Coupon         @relation(fields: [couponId], references: [id])
+  user           User           @relation(fields: [userId], references: [id])
+  unifiedBooking UnifiedBooking @relation(fields: [unifiedBookingId], references: [id])
 
   @@unique([couponId, userId, unifiedBookingId])
+  @@map("coupon_usages")
 }
 
-enum DiscountType {
-  PERCENTAGE
-  FIXED_AMOUNT
-}
-
-// ==================== NOTIFICATION SYSTEM (OPTIONAL) ====================
+// ==================== NOTIFICATIONS ====================
 
 model Notification {
-  id String @id @default(uuid())
-
-  user   User   @relation(fields: [userId], references: [id])
-  userId String
-
-  type    NotificationType
-  title   String
-  message String           @db.Text
-
-  // Related booking
+  id               String           @id @default(uuid())
+  userId           String
+  type             NotificationType
+  title            String
+  message          String           @db.Text
   unifiedBookingId String?
+  vendorId         String?
+  isRead           Boolean          @default(false)
+  readAt           DateTime?
+  deliveredAt      DateTime?
+  sentEmail        Boolean          @default(false)
+  sentSMS          Boolean          @default(false)
+  sentPush         Boolean          @default(false)
+  metadata         Json?
 
-  // Delivery
-  isRead      Boolean   @default(false)
-  readAt      DateTime?
-  deliveredAt DateTime?
-
-  // Channels
-  sentEmail Boolean @default(false)
-  sentSMS   Boolean @default(false)
-  sentPush  Boolean @default(false)
-
-  metadata Json?
+  user   User    @relation(fields: [userId], references: [id])
+  vendor Vendor? @relation(fields: [vendorId], references: [id])
 
   createdAt DateTime @default(now())
 
   @@index([userId, isRead])
   @@index([createdAt])
   @@index([type])
+  @@map("notifications")
 }
 
-enum NotificationType {
-  BOOKING_CONFIRMATION
-  BOOKING_REMINDER
-  BOOKING_CANCELLATION
-  PAYMENT_RECEIPT
-  PAYMENT_FAILED
-  REVIEW_RESPONSE
-  PROMOTION
-  SYSTEM_ALERT
+// ==================== SYSTEM ====================
+
+model AuditLog {
+  id           String  @id @default(uuid())
+  actorId      String?
+  actorRole    String?
+  actorIp      String?
+  action       String
+  entityType   String
+  entityId     String
+  previousData Json?
+  newData      Json?
+  reason       String?
+  userAgent    String?
+  metadata     Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([actorId])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model SystemConfig {
+  id          String  @id @default(uuid())
+  key         String  @unique
+  value       String
+  description String?
+  updatedBy   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("system_config")
 }

@@ -11,7 +11,7 @@ const path = require("path");
 const prisma = new PrismaClient();
 
 const updateUser = async (req, res) => {
-  const { name, email, address, phoneNumber } = req.body;
+  const { name, email, address, phoneNumber, role } = req.body; // Add role here
   const userId = req.user?.id || req.user?.sub;
   const password = req.body.password;
 
@@ -20,10 +20,10 @@ const updateUser = async (req, res) => {
   }
 
   try {
-    // Get current user to check for old profile image
+    // Get current user to check for old profile image and role
     const currentUser = await prisma.user.findUnique({
       where: { id: userId },
-      select: { profileImage: true },
+      select: { profileImage: true, role: true },
     });
 
     let profileImageUrl = currentUser?.profileImage;
@@ -31,15 +31,11 @@ const updateUser = async (req, res) => {
     // Handle profile image upload
     if (req.file) {
       try {
-        // Process and optimize the uploaded image
         profileImageUrl = await processProfileImage(req.file.path, userId);
-
-        // Delete old profile image if it exists
         if (currentUser?.profileImage) {
           await deleteOldProfileImage(currentUser.profileImage);
         }
       } catch (imageError) {
-        // If image processing fails, delete the uploaded file
         if (req.file.path) {
           await fs.unlink(req.file.path).catch(() => {});
         }
@@ -57,11 +53,12 @@ const updateUser = async (req, res) => {
       phoneNumber,
       address,
       profileImage: profileImageUrl,
+      role, // Include role in update
     };
 
     // Remove undefined fields
     Object.keys(updatePayload).forEach(
-      (key) => updatePayload[key] === undefined && delete updatePayload[key]
+      (key) => updatePayload[key] === undefined && delete updatePayload[key],
     );
 
     // Only hash and update password if provided
@@ -76,6 +73,35 @@ const updateUser = async (req, res) => {
       data: updatePayload,
     });
 
+    // 🔥 NEW LOGIC: If role changed to vendor, create Vendor record
+    if (role === "vendor" && currentUser?.role !== "vendor") {
+      // Check if vendor record already exists
+      const existingVendor = await prisma.vendor.findUnique({
+        where: { userId: userId },
+      });
+
+      if (!existingVendor) {
+        // Create vendor record with basic info from user
+        await prisma.vendor.create({
+          data: {
+            userId: userId,
+            vendorType: "HOTEL", // Default to HOTEL, can be updated later
+            businessName: updatedUser.name || "Business Name",
+            businessEmail: updatedUser.email,
+            businessPhone: updatedUser.phoneNumber || "Not provided",
+            businessAddress: updatedUser.address || "Not provided",
+            city: "Not specified",
+            state: "Not specified",
+            country: "Nigeria",
+            registrationNumber: `REG-${Date.now()}`, // Temporary registration number
+            status: "PENDING", // Needs admin approval
+          },
+        });
+
+        console.log(`✅ Vendor record created for user: ${updatedUser.email}`);
+      }
+    }
+
     // Strip password for response
     const { password: _, ...userResponse } = updatedUser;
 
@@ -89,7 +115,7 @@ const updateUser = async (req, res) => {
         profileImage: updatedUser.profileImage,
       },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
+      { expiresIn: process.env.JWT_EXPIRES_IN || "7d" },
     );
 
     res.status(200).json({
@@ -107,12 +133,10 @@ const updateUser = async (req, res) => {
   } catch (error) {
     console.error("Update User Error:", error);
 
-    // Clean up uploaded file if there was an error
     if (req.file) {
       await fs.unlink(req.file.path).catch(() => {});
     }
 
-    // Handle specific Prisma errors
     if (error.code === "P2002") {
       return res.status(400).json({
         error: "Email already exists. Please use a different email.",
@@ -126,7 +150,6 @@ const updateUser = async (req, res) => {
     });
   }
 };
-
 const deleteUser = async (req, res) => {
   const userId = req.user?.id || req.user?.sub;
 

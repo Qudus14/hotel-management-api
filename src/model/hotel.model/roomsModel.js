@@ -44,14 +44,60 @@ const roomSchema = {
       default: [],
     },
     description: { type: "string", nullable: true },
+    hotelId: { type: "string", nullable: true }, // Add this
+    roomCategoryId: { type: "string", nullable: true }, // Add this
   },
   required: ["roomNumber", "type", "price", "status", "capacity"],
 };
 
 const updateRoomSchema = {
   type: "object",
-  properties: roomSchema.properties, // reuse same properties
-  required: [], // nothing required on update
+  properties: {
+    roomNumber: { type: "string" },
+    floor: { type: "integer", nullable: true },
+    type: {
+      type: "string",
+      enum: [
+        "single",
+        "double",
+        "suite",
+        "deluxe",
+        "family",
+        "presidential",
+        "standard",
+        "economy",
+        "luxury",
+      ],
+    },
+    capacity: { type: "integer", minimum: 1 },
+    bedType: { type: "string", nullable: true },
+    price: { type: "number", minimum: 0 },
+    status: {
+      type: "string",
+      enum: [
+        "available",
+        "occupied",
+        "maintenance",
+        "reserved",
+        "cleaning",
+        "out_of_service",
+      ],
+    },
+    amenities: {
+      type: "array",
+      items: { type: "string" },
+      nullable: true,
+    },
+    images: {
+      type: "array",
+      items: { type: "string" },
+      nullable: true,
+    },
+    description: { type: "string", nullable: true },
+    hotelId: { type: "string", nullable: true },
+    roomCategoryId: { type: "string", nullable: true },
+  },
+  required: [],
 };
 
 module.exports = { roomSchema, updateRoomSchema };

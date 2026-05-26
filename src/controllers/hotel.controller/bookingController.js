@@ -21,11 +21,23 @@ const createBookings = async (req, res) => {
       specialRequests,
       cartId,
     } = req.body;
-    // roomId is already an integer (bookingSchema enforces it + AJV coerces)
 
-    const room = await prisma.room.findUnique({ where: { id: roomId } });
-    if (!room)
+    // Get room with hotel and category information
+    const room = await prisma.room.findUnique({
+      where: { id: roomId },
+      include: {
+        hotel: {
+          select: { id: true, name: true },
+        },
+        roomCategory: {
+          select: { id: true, name: true },
+        },
+      },
+    });
+
+    if (!room) {
       return res.status(404).json({ status: "fail", error: "Room not found" });
+    }
 
     if (room.status !== "available") {
       return res
@@ -63,6 +75,7 @@ const createBookings = async (req, res) => {
         OR: [{ checkInDate: { lt: checkOut }, checkOutDate: { gt: checkIn } }],
       },
     });
+
     if (conflict) {
       return res.status(409).json({
         status: "fail",
@@ -76,6 +89,8 @@ const createBookings = async (req, res) => {
         data: {
           roomId,
           userId,
+          hotelId: room.hotelId, // ✅ Add hotel ID
+          roomCategoryId: room.roomCategoryId, // ✅ Add category ID
           totalPrice,
           depositAmount: 0,
           status: "pending",
@@ -94,12 +109,30 @@ const createBookings = async (req, res) => {
               amenities: true,
             },
           },
+          hotel: {
+            // ✅ Include hotel info
+            select: {
+              id: true,
+              name: true,
+              city: true,
+              address: true,
+            },
+          },
+          roomCategory: {
+            // ✅ Include category info
+            select: {
+              id: true,
+              name: true,
+              bedType: true,
+              maxOccupancy: true,
+            },
+          },
           user: { select: { name: true, email: true } },
         },
       });
 
       const cancellationDeadline = new Date(checkIn);
-      cancellationDeadline.setHours(cancellationDeadline.getHours() - 48); // 48h before check-in
+      cancellationDeadline.setHours(cancellationDeadline.getHours() - 48);
 
       const unifiedBooking = await tx.unifiedBooking.create({
         data: {
@@ -118,6 +151,14 @@ const createBookings = async (req, res) => {
           cancellationDeadline,
           cartId: cartId || null,
           specialRequests: specialRequests || null,
+          metadata: {
+            // ✅ Store additional info in metadata
+            hotelId: room.hotelId,
+            hotelName: room.hotel?.name,
+            roomCategoryId: room.roomCategoryId,
+            roomCategoryName: room.roomCategory?.name,
+            roomNumber: room.roomNumber,
+          },
         },
       });
 
@@ -144,6 +185,8 @@ const createBookings = async (req, res) => {
         booking: {
           id: result.hotelBooking.id,
           room: result.hotelBooking.room,
+          hotel: result.hotelBooking.hotel, // ✅ Return hotel info
+          roomCategory: result.hotelBooking.roomCategory, // ✅ Return category info
           guest: result.hotelBooking.user,
           checkInDate: result.hotelBooking.checkInDate,
           checkOutDate: result.hotelBooking.checkOutDate,
@@ -528,7 +571,7 @@ const getMyUnifiedBookings = async (req, res) => {
         }
 
         return { ...booking, serviceDetails };
-      })
+      }),
     );
 
     return res.status(200).json({
@@ -659,7 +702,7 @@ const cancelUnifiedBooking = async (req, res) => {
         (
           (parseFloat(unifiedBooking.totalPrice) * refundPercentage) /
           100
-        ).toFixed(2)
+        ).toFixed(2),
       );
     }
 
@@ -681,7 +724,7 @@ const cancelUnifiedBooking = async (req, res) => {
         const user = await tx.user.findUnique({ where: { id: userId } });
         const balanceBefore = parseFloat(user.walletBalance);
         const balanceAfter = parseFloat(
-          (balanceBefore + refundAmount).toFixed(2)
+          (balanceBefore + refundAmount).toFixed(2),
         );
 
         await tx.user.update({

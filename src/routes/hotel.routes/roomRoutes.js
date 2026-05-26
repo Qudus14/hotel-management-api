@@ -1,4 +1,3 @@
-// roomRoutes.js
 const express = require("express");
 const {
   getAllRooms,
@@ -16,10 +15,12 @@ const router = express.Router();
 
 /**
  * @openapi
- * /hotel/rooms/getAllRoom:
+ * /hotel/rooms/getAllRooms:
  *   get:
  *     tags: [Rooms]
  *     summary: Get all rooms
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: query
  *         name: page
@@ -29,20 +30,33 @@ const router = express.Router();
  *         name: limit
  *         schema:
  *           type: integer
+ *       - in: query
+ *         name: hotelId
+ *         schema:
+ *           type: string
+ *         description: Filter rooms by hotel ID
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [available, occupied, maintenance, reserved, cleaning, out_of_service]
+ *         description: Filter rooms by status
  *     responses:
  *       200:
  *         description: Rooms retrieved successfully
  *       500:
  *         description: Internal server error
  */
-router.get("/getAllRoom", getAllRooms);
+router.get("/getAllRooms", getAllRooms);
 
 /**
  * @openapi
- * /hotel/rooms/getAllRoom/{roomId}:
+ * /hotel/rooms/getRoom/{roomId}:
  *   get:
  *     tags: [Rooms]
  *     summary: Get room by ID
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: roomId
@@ -57,7 +71,7 @@ router.get("/getAllRoom", getAllRooms);
  *       500:
  *         description: Internal server error
  */
-router.get("/getAllRoom/:roomId", getRoomById);
+router.get("/getRoom/:roomId", getRoomById);
 
 /**
  * @openapi
@@ -101,6 +115,12 @@ router.get("/getAllRoom/:roomId", getRoomById);
  *                 type: array
  *                 items:
  *                   type: string
+ *               hotelId:
+ *                 type: string
+ *                 description: ID of the hotel this room belongs to
+ *               roomCategoryId:
+ *                 type: string
+ *                 description: ID of the room category
  *     responses:
  *       201:
  *         description: Room created successfully
@@ -152,9 +172,17 @@ router.post("/createRoom", validateSchema(roomSchema), createRoom);
  *               description:
  *                 type: string
  *               amenities:
- *                 type: [string]
+ *                 type: array
+ *                 items:
+ *                   type: string
  *               images:
- *                 type: [string]
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *               hotelId:
+ *                 type: string
+ *               roomCategoryId:
+ *                 type: string
  *     responses:
  *       200:
  *         description: Room updated successfully
@@ -170,6 +198,7 @@ router.patch(
   validateSchema(updateRoomSchema),
   updateRoomById,
 );
+
 /**
  * @openapi
  * /hotel/rooms/removeRoom/{roomId}:

@@ -1,7 +1,7 @@
 const bookingSchema = {
   type: "object",
   properties: {
-    roomId: { type: "integer" },
+    roomId: { type: "string", format: "uuid" },
     checkInDate: { type: "string", format: "date" },
     checkOutDate: { type: "string", format: "date" },
     numberOfGuests: { type: "integer", minimum: 1, default: 1 },
