@@ -13,7 +13,7 @@ const generateReferenceCode = (serviceType) => {
 // ==================== CREATE FLIGHT BOOKING ====================
 const createFlightBooking = async (req, res) => {
   try {
-    const userId = req.user.sub; // FIX: from JWT, NOT req.body
+    const userId = req.user.sub;
     const { segments, addOnIds = [], cartId } = req.body;
 
     const user = await prisma.user.findUnique({
@@ -21,135 +21,140 @@ const createFlightBooking = async (req, res) => {
       select: { id: true, name: true, email: true },
     });
 
-    const result = await prisma.$transaction(async (tx) => {
-      let subtotal = 0;
+    // FIX: transaction only does writes — no final findUnique inside
+    const result = await prisma.$transaction(
+      async (tx) => {
+        let subtotal = 0;
 
-      // 1. Validate every seat and accumulate price
-      for (const segment of segments) {
-        const flight = await tx.flight.findUnique({
-          where: { id: segment.flightId },
-        });
-        if (!flight) throw new Error(`Flight ${segment.flightId} not found`);
-        if (flight.status === "CANCELLED")
-          throw new Error(`Flight ${flight.flightNumber} is cancelled`);
+        // 1. Validate every seat and accumulate price
+        for (const segment of segments) {
+          const flight = await tx.flight.findUnique({
+            where: { id: segment.flightId },
+          });
+          if (!flight) throw new Error(`Flight ${segment.flightId} not found`);
+          if (flight.status === "CANCELLED")
+            throw new Error(`Flight ${flight.flightNumber} is cancelled`);
 
-        const seat = await tx.seat.findUnique({
-          where: { id: segment.seatId },
-        });
-        if (!seat) throw new Error(`Seat ${segment.seatId} not found`);
-        if (!seat.isAvailable)
-          throw new Error(`Seat ${seat.seatNumber} is already taken`);
-        if (seat.flightId !== segment.flightId) {
-          throw new Error(
-            `Seat ${seat.seatNumber} does not belong to flight ${flight.flightNumber}`
-          );
+          const seat = await tx.seat.findUnique({
+            where: { id: segment.seatId },
+          });
+          if (!seat) throw new Error(`Seat ${segment.seatId} not found`);
+          if (!seat.isAvailable)
+            throw new Error(`Seat ${seat.seatNumber} is already taken`);
+          if (seat.flightId !== segment.flightId) {
+            throw new Error(
+              `Seat ${seat.seatNumber} does not belong to flight ${flight.flightNumber}`,
+            );
+          }
+
+          subtotal += parseFloat(seat.price);
         }
 
-        subtotal += parseFloat(seat.price);
-      }
-
-      // 2. Validate and add add-on prices
-      if (addOnIds.length > 0) {
-        const addOns = await tx.addOn.findMany({
-          where: { id: { in: addOnIds } },
-        });
-        if (addOns.length !== addOnIds.length) {
-          throw new Error("One or more add-ons not found");
+        // 2. Validate and add add-on prices
+        if (addOnIds.length > 0) {
+          const addOns = await tx.addOn.findMany({
+            where: { id: { in: addOnIds } },
+          });
+          if (addOns.length !== addOnIds.length) {
+            throw new Error("One or more add-ons not found");
+          }
+          addOns.forEach((a) => (subtotal += parseFloat(a.price)));
         }
-        addOns.forEach((a) => (subtotal += parseFloat(a.price)));
-      }
 
-      const tax = parseFloat((subtotal * 0.075).toFixed(2));
-      const serviceFee = parseFloat((subtotal * 0.02).toFixed(2));
-      const totalPrice = parseFloat((subtotal + tax + serviceFee).toFixed(2));
+        const tax = parseFloat((subtotal * 0.075).toFixed(2));
+        const serviceFee = parseFloat((subtotal * 0.02).toFixed(2));
+        const totalPrice = parseFloat((subtotal + tax + serviceFee).toFixed(2));
 
-      // 3. Get first flight for service dates
-      const firstFlight = await tx.flight.findUnique({
-        where: { id: segments[0].flightId },
-      });
-      const lastFlight = await tx.flight.findUnique({
-        where: { id: segments[segments.length - 1].flightId },
-      });
+        // 3. Get first/last flight for service dates
+        const firstFlight = await tx.flight.findUnique({
+          where: { id: segments[0].flightId },
+        });
+        const lastFlight = await tx.flight.findUnique({
+          where: { id: segments[segments.length - 1].flightId },
+        });
 
-      // 4. Create FlightBooking
-      const flightBooking = await tx.flightBooking.create({
-        data: { userId, totalPrice, status: "BOOKED" },
-      });
+        // 4. Create FlightBooking
+        const flightBooking = await tx.flightBooking.create({
+          data: { userId, totalPrice, status: "BOOKED" },
+        });
 
-      // 5. Create all segments
-      await tx.bookingSegment.createMany({
-        data: segments.map((seg) => ({
-          flightBookingId: flightBooking.id,
-          flightId: seg.flightId,
-          seatId: seg.seatId,
-        })),
-      });
-
-      // 6. Create add-on links
-      if (addOnIds.length > 0) {
-        await tx.bookingAddOn.createMany({
-          data: addOnIds.map((id) => ({
+        // 5. Create all segments
+        await tx.bookingSegment.createMany({
+          data: segments.map((seg) => ({
             flightBookingId: flightBooking.id,
-            addOnId: id,
+            flightId: seg.flightId,
+            seatId: seg.seatId,
           })),
         });
-      }
 
-      // 7. Lock all seats atomically
-      await tx.seat.updateMany({
-        where: { id: { in: segments.map((s) => s.seatId) } },
-        data: { isAvailable: false },
-      });
+        // 6. Create add-on links
+        if (addOnIds.length > 0) {
+          await tx.bookingAddOn.createMany({
+            data: addOnIds.map((id) => ({
+              flightBookingId: flightBooking.id,
+              addOnId: id,
+            })),
+          });
+        }
 
-      // 8. Create UnifiedBooking (was missing entirely before)
-      const unifiedBooking = await tx.unifiedBooking.create({
-        data: {
-          userId,
-          serviceType: "FLIGHT",
-          flightBookingId: flightBooking.id,
-          serviceStartDate: firstFlight.departureTime,
-          serviceEndDate: lastFlight.arrivalTime,
-          subtotal,
-          tax,
-          serviceFee,
-          totalPrice,
-          bookingStatus: "PENDING_PAYMENT",
-          paymentStatus: "PENDING",
-          referenceCode: generateReferenceCode("FLIGHT"),
-          cartId: cartId || null,
-        },
-      });
-
-      // 9. Link unified booking back to flight booking
-      await tx.flightBooking.update({
-        where: { id: flightBooking.id },
-        data: { unifiedBookingId: unifiedBooking.id },
-      });
-
-      if (cartId) {
-        await tx.cart.update({
-          where: { id: cartId },
-          data: { status: "CHECKED_OUT", checkedOutAt: new Date() },
+        // 7. Lock all seats atomically
+        await tx.seat.updateMany({
+          where: { id: { in: segments.map((s) => s.seatId) } },
+          data: { isAvailable: false },
         });
-      }
 
-      // 10. Return full booking details
-      const fullBooking = await tx.flightBooking.findUnique({
-        where: { id: flightBooking.id },
-        include: {
-          segments: { include: { flight: true, seat: true } },
-          addOns: { include: { addOn: true } },
-        },
-      });
+        // 8. Create UnifiedBooking
+        const unifiedBooking = await tx.unifiedBooking.create({
+          data: {
+            userId,
+            serviceType: "FLIGHT",
+            flightBookingId: flightBooking.id,
+            serviceStartDate: firstFlight.departureTime,
+            serviceEndDate: lastFlight.arrivalTime,
+            subtotal,
+            tax,
+            serviceFee,
+            totalPrice,
+            bookingStatus: "PENDING_PAYMENT",
+            paymentStatus: "PENDING",
+            referenceCode: generateReferenceCode("FLIGHT"),
+            cartId: cartId || null,
+          },
+        });
 
-      return { flightBooking: fullBooking, unifiedBooking };
+        // 9. Link unified booking back to flight booking
+        await tx.flightBooking.update({
+          where: { id: flightBooking.id },
+          data: { unifiedBookingId: unifiedBooking.id },
+        });
+
+        if (cartId) {
+          await tx.cart.update({
+            where: { id: cartId },
+            data: { status: "CHECKED_OUT", checkedOutAt: new Date() },
+          });
+        }
+
+        // FIX: return IDs only — no findUnique inside the transaction
+        return { flightBookingId: flightBooking.id, unifiedBooking };
+      },
+      { timeout: 15000 },
+    );
+
+    // FIX: fetch full booking OUTSIDE the transaction
+    const fullBooking = await prisma.flightBooking.findUnique({
+      where: { id: result.flightBookingId },
+      include: {
+        segments: { include: { flight: true, seat: true } },
+        addOnBookings: { include: { addOn: true } },
+      },
     });
 
     return res.status(201).json({
       status: "success",
       message: "Flight booked successfully",
       data: {
-        booking: result.flightBooking,
+        booking: fullBooking,
         unified: {
           id: result.unifiedBooking.id,
           user: user,
@@ -167,7 +172,6 @@ const createFlightBooking = async (req, res) => {
     });
   } catch (error) {
     console.error("Create Flight Booking Error:", error);
-    // Distinguish validation errors (400) from server errors (500)
     const isClientError =
       error.message.includes("not found") ||
       error.message.includes("taken") ||
@@ -187,7 +191,6 @@ const getAllFlightBookings = async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
-    // Customers only see their own, admins see all
     const where = req.user.role !== "admin" ? { userId: req.user.sub } : {};
 
     const [bookings, total] = await Promise.all([
@@ -198,8 +201,7 @@ const getAllFlightBookings = async (req, res) => {
         orderBy: { createdAt: "desc" },
         include: {
           segments: { include: { flight: true, seat: true } },
-          addOns: { include: { addOn: true } },
-
+          addOnBookings: { include: { addOn: true } },
           unifiedBooking: {
             select: {
               id: true,
@@ -246,7 +248,7 @@ const getFlightBookingById = async (req, res) => {
       where: { id: bookingId },
       include: {
         segments: { include: { flight: true, seat: true } },
-        addOns: { include: { addOn: true } },
+        addOnBookings: { include: { addOn: true } },
         unifiedBooking: {
           select: {
             user: {
@@ -272,7 +274,6 @@ const getFlightBookingById = async (req, res) => {
         .json({ status: "fail", error: "Booking not found" });
     }
 
-    // Customers can only view their own bookings
     if (req.user.role !== "admin" && booking.userId !== req.user.sub) {
       return res.status(403).json({ status: "fail", error: "Access denied" });
     }
@@ -302,7 +303,6 @@ const updateFlightBookingByStatus = async (req, res) => {
         .json({ status: "fail", error: "Booking not found" });
     }
 
-    // Validate status transitions
     const validTransitions = {
       BOOKED: ["PAID", "CANCELLED"],
       PAID: ["BOARDED", "CANCELLED"],
@@ -320,7 +320,6 @@ const updateFlightBookingByStatus = async (req, res) => {
 
     const updateData = { status: upperStatus };
 
-    // Generate QR code when payment is confirmed
     if (upperStatus === "PAID") {
       updateData.qrCode = await generateBoardingQR(bookingId);
     }
@@ -330,18 +329,17 @@ const updateFlightBookingByStatus = async (req, res) => {
       data: updateData,
       include: {
         segments: { include: { flight: true, seat: true } },
-        addOns: { include: { addOn: true } },
+        addOnBookings: { include: { addOn: true } },
       },
     });
 
-    // Mirror status to unified booking
     if (existing.unifiedBookingId) {
       const unifiedStatus =
         upperStatus === "PAID"
           ? "CONFIRMED"
           : upperStatus === "CANCELLED"
-          ? "CANCELLED"
-          : undefined;
+            ? "CANCELLED"
+            : undefined;
       if (unifiedStatus) {
         await prisma.unifiedBooking.update({
           where: { id: existing.unifiedBookingId },
@@ -381,7 +379,6 @@ const cancelFlightBookingById = async (req, res) => {
         .json({ status: "fail", error: "Booking not found" });
     }
 
-    // Ownership check (admin can cancel any)
     if (req.user.role !== "admin" && existing.userId !== userId) {
       return res.status(403).json({ status: "fail", error: "Access denied" });
     }
@@ -400,12 +397,12 @@ const cancelFlightBookingById = async (req, res) => {
 
     const seatIds = existing.segments.map((seg) => seg.seatId);
 
+    // FIX: clean transaction array — no stray return statement
     await prisma.$transaction([
       prisma.flightBooking.update({
         where: { id: bookingId },
         data: { status: "CANCELLED" },
       }),
-      // Release all seats back to available
       prisma.seat.updateMany({
         where: { id: { in: seatIds } },
         data: { isAvailable: true },

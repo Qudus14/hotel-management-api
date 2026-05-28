@@ -21,6 +21,57 @@ const {
 
 router.use(authenticate);
 
+// ─────────────────────────────────────────────
+// ADD-ON ROUTES
+// ─────────────────────────────────────────────
+
+/**
+ * @openapi
+ * /flight/bookings/add-ons:
+ *   get:
+ *     tags: [Flight Add-Ons]
+ *     summary: Get all available flight add-ons
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of add-ons
+ */
+router.get("/add-ons", getAllAddOns);
+
+/**
+ * @openapi
+ * /flight/bookings/add-ons:
+ *   post:
+ *     tags: [Flight Add-Ons]
+ *     summary: Create a new add-on (admin only)
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [type, name, price]
+ *             properties:
+ *               type:
+ *                 type: string
+ *                 enum: [BAGGAGE, MEAL, WIFI, PRIORITY_BOARDING]
+ *               name:
+ *                 type: string
+ *                 example: "Extra 23kg Baggage"
+ *               price:
+ *                 type: number
+ *                 example: 15000
+ *     responses:
+ *       201:
+ *         description: Add-on created
+ *       403:
+ *         description: Admin access required
+ */
+router.post("/add-ons", restrictTo("admin"), createAddOn);
+
 /**
  * @openapi
  * components:
@@ -373,56 +424,5 @@ router.patch("/:bookingId/cancel", cancelFlightBookingById);
  *         description: Unauthorized
  */
 router.delete("/:bookingId", restrictTo("admin"), deleteFlightBookingById);
-
-// ─────────────────────────────────────────────
-// ADD-ON ROUTES
-// ─────────────────────────────────────────────
-
-/**
- * @openapi
- * /flight/bookings/add-ons:
- *   get:
- *     tags: [Flight Add-Ons]
- *     summary: Get all available flight add-ons
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: List of add-ons
- */
-router.get("/add-ons", getAllAddOns);
-
-/**
- * @openapi
- * /flight/bookings/add-ons:
- *   post:
- *     tags: [Flight Add-Ons]
- *     summary: Create a new add-on (admin only)
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [type, name, price]
- *             properties:
- *               type:
- *                 type: string
- *                 enum: [BAGGAGE, MEAL, WIFI, PRIORITY_BOARDING]
- *               name:
- *                 type: string
- *                 example: "Extra 23kg Baggage"
- *               price:
- *                 type: number
- *                 example: 15000
- *     responses:
- *       201:
- *         description: Add-on created
- *       403:
- *         description: Admin access required
- */
-router.post("/add-ons", restrictTo("admin"), createAddOn);
 
 module.exports = router;
