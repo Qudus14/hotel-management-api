@@ -224,7 +224,7 @@ enum AttractionCategory {
 }
 
 enum AttractionBookingStatus {
-  CONFIRMED
+  BOOKED
   CANCELLED
   COMPLETED
   NO_SHOW
@@ -1119,7 +1119,7 @@ model TouristAttractionBooking {
   ticketNumber     String?                 @unique
   entryScanned     Boolean                 @default(false)
   scannedAt        DateTime?
-  status           AttractionBookingStatus @default(CONFIRMED)
+  status           AttractionBookingStatus @default(BOOKED)
 
   unifiedBooking UnifiedBooking            @relation(fields: [unifiedBookingId], references: [id])
   attraction     TouristAttraction         @relation(fields: [attractionId], references: [id])

@@ -86,8 +86,8 @@ const createAttraction = async (req, res) => {
         isActive: true,
       },
       include: {
-        attractionAmenityMappings: { include: { amenity: true } },
-        attractionReasonMappings: { include: { reason: true } },
+        amenityMappings: { include: { amenity: true } },
+        reasonMappings: { include: { reason: true } },
       },
     });
 
@@ -135,8 +135,8 @@ const getAllAttractions = async (req, res) => {
         take: limit,
         orderBy: { createdAt: "desc" },
         include: {
-          attractionAmenityMappings: { include: { amenity: true } },
-          attractionReasonMappings: { include: { reason: true } },
+          amenityMappings: { include: { amenity: true } },
+          reasonMappings: { include: { reason: true } },
           _count: {
             select: {
               bookings: true,
@@ -195,8 +195,8 @@ const getAttractionById = async (req, res) => {
     const attraction = await prisma.touristAttraction.findUnique({
       where: { id: attractionId },
       include: {
-        attractionAmenityMappings: { include: { amenity: true } },
-        attractionReasonMappings: { include: { reason: true } },
+        amenityMappings: { include: { amenity: true } },
+        reasonMappings: { include: { reason: true } },
         timeSlots: {
           where: {
             date: { gte: new Date() }, // Only future slots
@@ -260,8 +260,8 @@ const getAttractionById = async (req, res) => {
 
     const response = {
       ...attraction,
-      amenities: attraction.attractionAmenityMappings.map((m) => m.amenity),
-      reasonsToVisit: attraction.attractionReasonMappings.map((m) => m.reason),
+      amenities: attraction.amenityMappings.map((m) => m.amenity),
+      reasonsToVisit: attraction.reasonMappings.map((m) => m.reason),
       relatedAttractions: attraction.originalRelations.map((r) => ({
         id: r.relatedAttraction.id,
         name: r.relatedAttraction.name,
@@ -290,8 +290,8 @@ const getAttractionById = async (req, res) => {
         totalVisitors: bookingStats._sum.numberOfPeople || 0,
       },
       // Clean up raw relation fields
-      attractionAmenityMappings: undefined,
-      attractionReasonMappings: undefined,
+      amenityMappings: undefined,
+      reasonMappings: undefined,
       originalRelations: undefined,
       travelerPhotos: undefined,
       _count: undefined,
