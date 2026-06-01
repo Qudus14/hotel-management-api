@@ -188,7 +188,7 @@ router.get("/", getAllAttractions);
  * /attractions:
  *   post:
  *     tags: [Attractions]
- *     summary: Create a new attraction (admin only)
+ *     summary: Create a new attraction (vendor only)
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -197,19 +197,26 @@ router.get("/", getAllAttractions);
  *         application/json:
  *           schema:
  *             type: object
- *             required: [name, description, category, address, city, country, basePrice, openingHours]
+ *             required: [operatorId, name, description, category, address, city, country, basePrice, openingHours]
  *             properties:
+ *               operatorId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID of the attraction operator (must be approved)
+ *                 example: "123e4567-e89b-12d3-a456-426614174000"
  *               name:
  *                 type: string
  *                 example: Lekki Conservation Centre
  *               description:
  *                 type: string
+ *                 example: A beautiful nature reserve with canopy walkway
  *               category:
  *                 type: string
  *                 enum: [MUSEUM, PARK, HISTORICAL, BEACH, THEME_PARK, ZOO, LANDMARK, SHOPPING, TOUR, ENTERTAINMENT, WATER_PARK, AQUARIUM, ART_GALLERY, CONCERT_VENUE, SPORTS_VENUE, RELIGIOUS_SITE, NATURE_RESERVE]
- *                 example: PARK
+ *                 example: NATURE_RESERVE
  *               address:
  *                 type: string
+ *                 example: Km 19, Lekki-Epe Expressway
  *               city:
  *                 type: string
  *                 example: Lagos
@@ -218,13 +225,13 @@ router.get("/", getAllAttractions);
  *                 example: Nigeria
  *               latitude:
  *                 type: number
- *                 example: 6.4698
+ *                 example: 6.4453
  *               longitude:
  *                 type: number
- *                 example: 3.5852
+ *                 example: 3.9484
  *               openingHours:
  *                 type: string
- *                 example: "Mon-Sun 8:00AM - 5:00PM"
+ *                 example: "Mon-Sun 8:30AM - 5:00PM"
  *               basePrice:
  *                 type: number
  *                 example: 2500
@@ -242,23 +249,29 @@ router.get("/", getAllAttractions);
  *                 default: 120
  *               contactPhone:
  *                 type: string
+ *                 example: "+2348023456789"
  *               contactEmail:
  *                 type: string
+ *                 example: "info@attraction.com"
  *               website:
  *                 type: string
+ *                 example: "https://www.attraction.com"
  *               images:
  *                 type: array
  *                 items:
  *                   type: string
+ *                 example: ["https://example.com/image1.jpg"]
  *     responses:
  *       201:
  *         description: Attraction created
  *       400:
  *         description: Invalid category or missing fields
  *       403:
- *         description: Admin access required
+ *         description: Vendor access required
+ *       404:
+ *         description: Operator not found
  */
-router.post("/", restrictTo("admin"), createAttraction);
+router.post("/", restrictTo("vendor"), createAttraction);
 
 // ─── My Bookings (static, before /:attractionId) ───
 /**
@@ -438,7 +451,7 @@ router.get("/:attractionId", getAttractionById);
  * /attractions/{attractionId}:
  *   patch:
  *     tags: [Attractions]
- *     summary: Update attraction details (admin only)
+ *     summary: Update attraction details (vendor only)
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -471,14 +484,14 @@ router.get("/:attractionId", getAttractionById);
  *       404:
  *         description: Not found
  */
-router.patch("/:attractionId", restrictTo("admin"), updateAttractionById);
+router.patch("/:attractionId", restrictTo("vendor"), updateAttractionById);
 
 /**
  * @openapi
  * /attractions/{attractionId}:
  *   delete:
  *     tags: [Attractions]
- *     summary: Soft delete attraction (admin only)
+ *     summary: Soft delete attraction (vendor only)
  *     description: Blocked if there are upcoming confirmed bookings.
  *     security:
  *       - bearerAuth: []
@@ -497,14 +510,14 @@ router.patch("/:attractionId", restrictTo("admin"), updateAttractionById);
  *       404:
  *         description: Not found
  */
-router.delete("/:attractionId", restrictTo("admin"), deleteAttractionById);
+router.delete("/:attractionId", restrictTo("vendor"), deleteAttractionById);
 
 /**
  * @openapi
  * /attractions/{attractionId}/status:
  *   patch:
  *     tags: [Attractions]
- *     summary: Toggle attraction active/inactive (admin only)
+ *     summary: Toggle attraction active/inactive (vendor only)
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -520,7 +533,7 @@ router.delete("/:attractionId", restrictTo("admin"), deleteAttractionById);
  */
 router.patch(
   "/:attractionId/status",
-  restrictTo("admin"),
+  restrictTo("vendor"),
   toggleAttractionStatus,
 );
 
@@ -572,7 +585,7 @@ router.get("/:attractionId/slots", getTimeSlots);
  * /attractions/{attractionId}/slots:
  *   post:
  *     tags: [Attractions]
- *     summary: Create or update time slots (admin only)
+ *     summary: Create or update time slots (vendor only)
  *     description: |
  *       Upserts time slots for an attraction. Uses `date + startTime` as the unique key —
  *       existing slots for the same date/time are updated, new ones are created.
@@ -640,7 +653,7 @@ router.get("/:attractionId/slots", getTimeSlots);
  *       404:
  *         description: Attraction not found
  */
-router.post("/:attractionId/slots", restrictTo("admin"), upsertTimeSlots);
+router.post("/:attractionId/slots", restrictTo("vendor"), upsertTimeSlots);
 
 /**
  * @openapi

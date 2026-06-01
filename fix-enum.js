@@ -1,44 +1,52 @@
+// scripts/createQatarAirwaysVendor.js
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
-async function fixEnum() {
+async function createQatarAirwaysVendor() {
   try {
-    // First, check what values exist in the database
-    const allRecords = await prisma.touristAttractionBooking.findMany();
-    console.log("All records in database:");
-    allRecords.forEach((record) => {
-      console.log(`ID: ${record.id}, Status: ${record.status}`);
-    });
-
-    // Update CONFIRMED to BOOKED
-    const updated = await prisma.touristAttractionBooking.updateMany({
-      where: {
-        status: "CONFIRMED",
-      },
+    const vendor = await prisma.vendor.create({
       data: {
-        status: "BOOKED",
+        userId: "e36c5e4c-087d-4053-a92b-3b0e1ca0bd5f",
+        vendorType: "ATTRACTION",
+        businessName: "Lagos State Parks Agency",
+        businessEmail: "info@lagosparks.gov.ng",
+        businessPhone: "+2348023456789",
+        businessAddress: "Parks and Recreation Department, Alausa, Ikeja",
+        city: "Lagos",
+        state: "Lagos",
+        country: "Nigeria",
+        website: "https://lagosparks.gov.ng",
+        yearEstablished: 2005,
+        description:
+          "Government agency responsible for managing and maintaining all parks, gardens, and recreation centers in Lagos State. We operate Lekki Conservation Centre, Ndubuisi Kanu Park, Johnson Jakande Tinubu Park, and other recreational facilities.",
+        registrationNumber: "LASG/PARK/001",
+        taxIdEnc: "TAX789012345",
+        licenseNumber: "LASG/TOUR/2023/001",
+        status: "APPROVED",
+        submittedAt: new Date(),
+        avgRating: 4.5,
+        totalReviews: 1500,
+      },
+      include: {
+        user: {
+          select: {
+            name: true,
+            email: true,
+            phoneNumber: true,
+          },
+        },
       },
     });
 
-    console.log(
-      `\n✅ Updated ${updated.count} records from 'CONFIRMED' to 'BOOKED'`,
-    );
-
-    // Verify no more CONFIRMED records
-    const remaining = await prisma.touristAttractionBooking.findMany({
-      where: {
-        status: "CONFIRMED",
-      },
-    });
-
-    if (remaining.length === 0) {
-      console.log("✅ No more CONFIRMED records found!");
-    }
+    console.log("✅ Qatar Airways vendor profile created!");
+    console.log("Vendor ID:", vendor.id);
+    console.log("Airline:", vendor.businessName);
+    console.log("Status:", vendor.status);
   } catch (error) {
-    console.error("Error:", error.message);
+    console.error("Error:", error);
   } finally {
     await prisma.$disconnect();
   }
 }
 
-fixEnum();
+createQatarAirwaysVendor();

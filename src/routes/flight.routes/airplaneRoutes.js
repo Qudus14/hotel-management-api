@@ -17,27 +17,48 @@ router.use(authenticate);
  * @openapi
  * components:
  *   schemas:
- *     Airplane:
+ *     Plane:
  *       type: object
  *       properties:
  *         id:
  *           type: string
  *           format: uuid
+ *         airlineId:
+ *           type: string
+ *           format: uuid
+ *         registration:
+ *           type: string
+ *           example: 5N-BVE
+ *           description: Unique aircraft registration/tail number
  *         model:
  *           type: string
  *           example: Boeing 737-800
- *         tailNumber:
+ *         manufacturer:
  *           type: string
- *           example: 5N-ABC
- *         airline:
- *           type: string
- *           example: Air Peace
- *         capacity:
- *           type: integer
- *           example: 189
+ *           example: Boeing
  *         totalSeats:
  *           type: integer
  *           example: 189
+ *           description: Used to auto-generate seats when a flight is created
+ *         status:
+ *           type: string
+ *           enum: [ACTIVE, MAINTENANCE, RETIRED]
+ *           default: ACTIVE
+ *         airline:
+ *           type: object
+ *           properties:
+ *             id:
+ *               type: string
+ *             name:
+ *               type: string
+ *             iataCode:
+ *               type: string
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *         updatedAt:
+ *           type: string
+ *           format: date-time
  */
 
 /**
@@ -45,25 +66,56 @@ router.use(authenticate);
  * /flight/airplanes:
  *   get:
  *     tags: [Airplanes]
- *     summary: Get all airplanes (admin only)
+ *     summary: Get all planes (vendor only)
+ *     description: Returns all planes. Optionally filter by airline or status.
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: airlineId
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Filter planes by airline
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [ACTIVE, MAINTENANCE, RETIRED]
+ *         description: Filter by plane status
  *     responses:
  *       200:
- *         description: List of airplanes
+ *         description: Planes retrieved successfully
+ *       403:
+ *         description: vendor access required
+ *       401:
+ *         description: Unauthorized
  */
-router.get("/", restrictTo("admin"), getAllAirplanes);
+router.get("/", restrictTo("vendor"), getAllAirplanes);
 
 /**
  * @openapi
  * /flight/airplanes:
  *   post:
  *     tags: [Airplanes]
- *     summary: Create airplane (admin only)
+ *     summary: Add a plane to an airline (vendor only)
  *     description: |
- *       Creates an airplane. When you create a **Flight** using this airplane's ID,
- *       seats are auto-generated based on `capacity`.
- *       Seat layout: 10% First Class (3x price), 20% Business (1.5x), 70% Economy (base price).
+ *       Creates a plane linked to an approved airline.
+ *       When you later create a **Flight** using this plane's `id` (as `planeId`),
+ *       seats are auto-generated based on `totalSeats`.
+ *
+ *       **Seat auto-generation rules (applied at flight creation):**
+ *       - First 10% → First Class (3× base price)
+ *       - Next 20% → Business Class (1.5× base price)
+ *       - Remaining 70% → Economy Class (base price)
+ *
+ *       **Full creation order:**
+ *       1. `POST /flight/airlines` → create airline
+ *       2. `PATCH /flight/airlines/{id}/review` → vendor approves airline
+ *       3. `POST /flight/airplanes` → add plane to airline ← you are here
+ *       4. `POST /flight/trip` → create flight using `planeId`
+ *       5. `GET /flight/airplanes/{flightId}/seats` → user views available seats
+ *       6. `POST /flight/bookings` → user books with `flightId` + `seatId`
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -72,38 +124,53 @@ router.get("/", restrictTo("admin"), getAllAirplanes);
  *         application/json:
  *           schema:
  *             type: object
- *             required: [model, capacity, airline, tailNumber]
+ *             required: [airlineId, registration, model, manufacturer, totalSeats]
  *             properties:
+ *               airlineId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: Must be an approved airline
+ *               registration:
+ *                 type: string
+ *                 example: 5N-BVE
+ *                 description: Unique aircraft registration number
  *               model:
  *                 type: string
  *                 example: Boeing 737-800
- *               capacity:
+ *               manufacturer:
+ *                 type: string
+ *                 example: Boeing
+ *               totalSeats:
  *                 type: integer
  *                 example: 189
- *                 description: Total seats — auto-used when flight is created
- *               airline:
+ *                 description: Total capacity — determines seats auto-generated per flight
+ *               status:
  *                 type: string
- *                 example: Air Peace
- *               tailNumber:
- *                 type: string
- *                 example: 5N-ABC
- *                 description: Must be unique
+ *                 enum: [ACTIVE, MAINTENANCE, RETIRED]
+ *                 default: ACTIVE
  *     responses:
  *       201:
- *         description: Airplane created
- *       409:
- *         description: Tail number already exists
+ *         description: Plane created successfully
+ *       400:
+ *         description: Airline not found or not yet approved
  *       403:
- *         description: Admin access required
+ *         description: vendor access required
+ *       404:
+ *         description: Airline not found
+ *       409:
+ *         description: Registration number already exists
+ *       401:
+ *         description: Unauthorized
  */
-router.post("/", restrictTo("admin"), createAirplane);
+router.post("/", restrictTo("vendor"), createAirplane);
 
 /**
  * @openapi
  * /flight/airplanes/{airplaneId}:
  *   get:
  *     tags: [Airplanes]
- *     summary: Get airplane by ID (admin only)
+ *     summary: Get plane by ID (vendor only)
+ *     description: Returns plane details including airline info, seat map, and flight count.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -115,18 +182,25 @@ router.post("/", restrictTo("admin"), createAirplane);
  *           format: uuid
  *     responses:
  *       200:
- *         description: Airplane found
+ *         description: Plane found
+ *       403:
+ *         description: vendor access required
  *       404:
- *         description: Airplane not found
+ *         description: Plane not found
+ *       401:
+ *         description: Unauthorized
  */
-router.get("/:airplaneId", restrictTo("admin"), getAirplaneById);
+router.get("/:airplaneId", restrictTo("vendor"), getAirplaneById);
 
 /**
  * @openapi
  * /flight/airplanes/{airplaneId}:
  *   patch:
  *     tags: [Airplanes]
- *     summary: Update airplane (admin only)
+ *     summary: Update plane details (vendor only)
+ *     description: |
+ *       Update any plane field. Note: changing `totalSeats` does **not**
+ *       retroactively update seats on existing flights.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -142,28 +216,43 @@ router.get("/:airplaneId", restrictTo("admin"), getAirplaneById);
  *           schema:
  *             type: object
  *             properties:
+ *               registration:
+ *                 type: string
  *               model:
  *                 type: string
- *               capacity:
+ *               manufacturer:
+ *                 type: string
+ *               totalSeats:
  *                 type: integer
- *               airline:
+ *               status:
  *                 type: string
- *               tailNumber:
- *                 type: string
+ *                 enum: [ACTIVE, MAINTENANCE, RETIRED]
+ *           example:
+ *             status: MAINTENANCE
  *     responses:
  *       200:
- *         description: Updated successfully
+ *         description: Plane updated successfully
+ *       403:
+ *         description: vendor access required
  *       404:
- *         description: Not found
+ *         description: Plane not found
+ *       409:
+ *         description: Registration number already exists
+ *       401:
+ *         description: Unauthorized
  */
-router.patch("/:airplaneId", restrictTo("admin"), updateAirplaneById);
+router.patch("/:airplaneId", restrictTo("vendor"), updateAirplaneById);
 
 /**
  * @openapi
  * /flight/airplanes/{airplaneId}:
  *   delete:
  *     tags: [Airplanes]
- *     summary: Delete airplane (admin only)
+ *     summary: Delete a plane (vendor only)
+ *     description: |
+ *       Permanently deletes a plane.
+ *       **Blocked** if the plane has any associated flights.
+ *       Use `PATCH /{airplaneId}` with `status: RETIRED` to decommission instead.
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -175,21 +264,32 @@ router.patch("/:airplaneId", restrictTo("admin"), updateAirplaneById);
  *           format: uuid
  *     responses:
  *       200:
- *         description: Deleted successfully
+ *         description: Plane deleted successfully
+ *       400:
+ *         description: Cannot delete — plane has associated flights
+ *       403:
+ *         description: vendor access required
  *       404:
- *         description: Not found
+ *         description: Plane not found
+ *       401:
+ *         description: Unauthorized
  */
-router.delete("/:airplaneId", restrictTo("admin"), deleteAirplaneById);
+router.delete("/:airplaneId", restrictTo("vendor"), deleteAirplaneById);
 
 /**
  * @openapi
  * /flight/airplanes/{flightId}/seats:
  *   get:
  *     tags: [Airplanes]
- *     summary: Get seats for a flight (users call this before booking)
+ *     summary: Get seats for a flight (all authenticated users)
  *     description: |
- *       Returns all seats grouped by class (First, Business, Economy).
+ *       Returns all seats for a given flight, grouped by class (First, Business, Economy).
  *       Use the seat `id` as `seatId` when calling `POST /flight/bookings`.
+ *
+ *       **Typical flow:**
+ *       1. `GET /flight/trip?from=LOS&to=ABV&date=2026-08-01` → find a flight
+ *       2. `GET /flight/airplanes/{flightId}/seats?available=true` → pick a seat ← you are here
+ *       3. `POST /flight/bookings` → book with `flightId` + `seatId`
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -199,23 +299,27 @@ router.delete("/:airplaneId", restrictTo("admin"), deleteAirplaneById);
  *         schema:
  *           type: string
  *           format: uuid
+ *         description: Flight ID (not airplane ID)
  *       - in: query
  *         name: class
  *         schema:
  *           type: string
  *           enum: [First, Business, Economy]
  *         description: Filter by seat class
+ *         example: Economy
  *       - in: query
  *         name: available
  *         schema:
  *           type: boolean
  *           default: true
- *         description: Filter by availability
+ *         description: Filter by availability — pass `false` to see all seats
  *     responses:
  *       200:
  *         description: Seats grouped by class
  *       404:
  *         description: Flight not found
+ *       401:
+ *         description: Unauthorized
  */
 router.get("/:flightId/seats", getSeatsByFlight);
 

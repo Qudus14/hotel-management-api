@@ -10,6 +10,12 @@ const flightAirplaneRoutes = require("../routes/flight.routes/airplaneRoutes");
 const flightBookingRoutes = require("../routes/flight.routes/bookingRoutes");
 const flightTripRoutes = require("../routes/flight.routes/tripRoutes");
 const attractionRoutes = require("../routes/attraction.routes/attractionRoutes");
+const operatorRoutes = require("../routes/attraction.routes/operatorRoutes");
+const carStoreRoutes = require("../routes/car-rental.routes/indexRoutes");
+const carRoutes = require("../routes/car-rental.routes/carRoutes");
+const rentalRoutes = require("../routes/car-rental.routes/rentalRoutes");
+const storeRoutes = require("../routes/car-rental.routes/storeRoutes");
+const airlineRoutes = require("../routes/flight.routes/airlineRoutes");
 const { authenticate: protect } = require("../middleware/auth");
 
 router.use("/auth", authRoutes);
@@ -21,7 +27,13 @@ router.use("/hotel/bookings", protect, bookingRoutes);
 router.use("/hotel/admin", protect, adminRoutes);
 router.use("/flight/airplanes", protect, flightAirplaneRoutes);
 router.use("/flight/bookings", protect, flightBookingRoutes);
+router.use("/attractions/operators", protect, operatorRoutes);
 router.use("/attractions", protect, attractionRoutes);
 router.use("/flight/trip", protect, flightTripRoutes);
+router.use("/car-stores", protect, carStoreRoutes);
+router.use("/car-store/cars", protect, carRoutes);
+router.use("/car-store/rental", protect, rentalRoutes);
+router.use("/car-store/stores/:storeId", protect, storeRoutes);
+router.use("/flight/airlines", protect, airlineRoutes);
 
 module.exports = router;

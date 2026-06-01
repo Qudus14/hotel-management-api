@@ -1,156 +1,138 @@
-const attraction = {
-  // Basic Info
-  id: string,
-  name: string,
-  description: string,
-  
-  // Location
-  location: {
-    address: string,
-    city: string,
-    country: string,
-    latitude: number,
-    longitude: number,
+const createAttractionSchema = {
+  type: "object",
+  required: [
+    "name",
+    "description",
+    "category",
+    "address",
+    "city",
+    "country",
+    "basePrice",
+    "openingHours",
+  ],
+  properties: {
+    operatorId: { type: "string", format: "uuid", nullable: true },
+    slug: { type: "string", minLength: 2, maxLength: 150, nullable: true },
+    name: { type: "string", minLength: 2, maxLength: 200 },
+    description: { type: "string", minLength: 10 },
+    category: { type: "string" }, // Maps to your AttractionCategory Enum
+    address: { type: "string" },
+    city: { type: "string" },
+    country: { type: "string" },
+    latitude: { type: "number", minimum: -90, maximum: 90, nullable: true },
+    longitude: { type: "number", minimum: -180, maximum: 180, nullable: true },
+    isBookable: { type: "boolean" },
+    maxCapacityPerSlot: { type: "integer", minimum: 1 },
+    minAdvanceHours: { type: "integer", minimum: 0 },
+    maxAdvanceDays: { type: "integer", minimum: 1 },
+    averageDurationMinutes: { type: "integer", minimum: 1 },
+    basePrice: { type: "number", minimum: 0 },
+    dynamicPricing: { type: "boolean" },
+    cancellationWindowHours: { type: "integer", minimum: 0 },
+    refundPercentage: { type: "integer", minimum: 0, maximum: 100 },
+    contactPhone: { type: "string", nullable: true },
+    contactEmail: { type: "string", format: "email", nullable: true },
+    website: { type: "string", format: "uri", nullable: true },
+    images: {
+      type: "array",
+      items: { type: "string", format: "uri" },
+    },
+    openingHours: { type: "string" },
+    additionalInformation: { type: "string", nullable: true },
+    included: { type: "array", items: { type: "string" } },
+    notIncluded: { type: "array", items: { type: "string" } },
+    whatToBring: { type: "array", items: { type: "string" } },
+    relatedAttractionIds: { type: "string", nullable: true },
+    travelersPhotos: { type: "object", nullable: true },
+    metadata: { type: "object", nullable: true },
   },
-  
-  // Category (single enum, not array)
-  category: "MUSEUM" | "PARK" | "HISTORICAL" | "BEACH" | "THEME_PARK" | "ZOO" | "LANDMARK" | "SHOPPING" | "TOUR" | "ENTERTAINMENT" | "WATER_PARK" | "AQUARIUM" | "ART_GALLERY" | "CONCERT_VENUE" | "SPORTS_VENUE" | "RELIGIOUS_SITE" | "NATURE_RESERVE",
-  
-  // Opening Hours (moved to metadata)
-  openingHours: string,
-  
-  // Pricing
-  ticketPrice: number,
-  
-  // Media
-  images: [string],
-  
-  // Additional Info (moved to metadata)
-  additionalInformation: string,
-  
-  // Features (moved to metadata)
-  amenities: [string],
-  ReasonToVisit: [string],
-  
-  // Reviews
-  reviews: [
-    {
-      id: string,
-      userId: string,
-      userName: string,
-      rating: number,
-      title: string,
-      comment: string,
-      images: [string],
-      helpfulCount: number,
-      isVerified: boolean,
-      ownerResponse: string | null,
-      createdAt: Date,
+  additionalProperties: false,
+};
+
+const updateAttractionSchema = {
+  type: "object",
+  minProperties: 1,
+  properties: {
+    operatorId: { type: "string", format: "uuid", nullable: true },
+    slug: { type: "string", minLength: 2, maxLength: 150, nullable: true },
+    name: { type: "string", minLength: 2, maxLength: 200 },
+    description: { type: "string", minLength: 10 },
+    category: { type: "string" },
+    address: { type: "string" },
+    city: { type: "string" },
+    country: { type: "string" },
+    latitude: { type: "number", minimum: -90, maximum: 90, nullable: true },
+    longitude: { type: "number", minimum: -180, maximum: 180, nullable: true },
+    isBookable: { type: "boolean" },
+    maxCapacityPerSlot: { type: "integer", minimum: 1 },
+    minAdvanceHours: { type: "integer", minimum: 0 },
+    maxAdvanceDays: { type: "integer", minimum: 1 },
+    averageDurationMinutes: { type: "integer", minimum: 1 },
+    basePrice: { type: "number", minimum: 0 },
+    dynamicPricing: { type: "boolean" },
+    cancellationWindowHours: { type: "integer", minimum: 0 },
+    refundPercentage: { type: "integer", minimum: 0, maximum: 100 },
+    contactPhone: { type: "string", nullable: true },
+    contactEmail: { type: "string", format: "email", nullable: true },
+    website: { type: "string", format: "uri", nullable: true },
+    images: {
+      type: "array",
+      items: { type: "string", format: "uri" },
     },
-  ],
-  
-  // Related Attractions
-  relatedAttractions: [
-    {
-      id: string,
-      name: string,
-      distance: string | null,
-      estimatedTravelTime: string | null,
-    },
-  ],
-  
-  // Travelers Photos
-  travelersPhotos: [
-    {
-      id: string,
-      userId: string,
-      userName: string,
-      imageUrl: string,
-      caption: string | null,
-      likes: number,
-      createdAt: Date,
-    },
-  ],
-  
-  // Booking Rules (REQUIRED - was missing)
-  isBookable: boolean,
-  maxCapacityPerSlot: number,
-  minAdvanceHours: number,
-  maxAdvanceDays: number,
-  
-  // Pricing Rules (REQUIRED - was missing)
-  basePrice: number,
-  dynamicPricing: boolean,
-  
-  // Cancellation Policy (REQUIRED - was missing)
-  cancellationWindowHours: number,
-  refundPercentage: number,
-  
-  // Contact Info (REQUIRED - was missing)
-  contact: {
-    phone: string | null,
-    email: string | null,
-    website: string | null,
+    openingHours: { type: "string" },
+    additionalInformation: { type: "string", nullable: true },
+    included: { type: "array", items: { type: "string" } },
+    notIncluded: { type: "array", items: { type: "string" } },
+    whatToBring: { type: "array", items: { type: "string" } },
+    isActive: { type: "boolean" },
   },
-  
-  // Duration (REQUIRED - was missing)
-  averageDurationMinutes: number,
-  
-  // Time Slots (REQUIRED - was missing)
-  timeSlots: [
-    {
-      id: string,
-      date: Date,
-      startTime: string,
-      endTime: string,
-      availableSpots: number,
-      maxSpots: number,
-      priceMultiplier: number,
-      specialPrice: number | null,
-      isBlocked: boolean,
-      isHoliday: boolean,
-      reservedSpots: number,
-      confirmedSpots: number,
+  additionalProperties: false,
+};
+
+const createTimeSlotSchema = {
+  type: "object",
+  required: ["attractionId", "date", "startTime", "endTime"],
+  properties: {
+    attractionId: { type: "string", format: "uuid" },
+    date: { type: "string", format: "date-time" }, // Maps to Prisma @db.Date
+    startTime: {
+      type: "string",
+      pattern: "^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$",
+      description: "HH:MM format",
     },
-  ],
-  
-  // Bookings (REQUIRED - was missing)
-  bookings: [
-    {
-      id: string,
-      unifiedBookingId: string,
-      numberOfPeople: number,
-      visitorNames: [string],
-      pricePerPerson: number,
-      subtotal: number,
-      tax: number,
-      totalPrice: number,
-      qrCode: string | null,
-      ticketNumber: string | null,
-      entryScanned: boolean,
-      scannedAt: Date | null,
-      status: "CONFIRMED" | "CANCELLED" | "COMPLETED" | "NO_SHOW" | "REFUNDED",
-      timeSlotId: string,
-      createdAt: Date,
+    endTime: {
+      type: "string",
+      pattern: "^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$",
+      description: "HH:MM format",
     },
-  ],
-  
-  // Stats (Calculated)
-  stats: {
-    averageRating: number | null,
-    totalReviews: number,
-    totalBookings: number,
-    averageBookingSize: number,
-    occupancyRate: number,
-    peakHours: [string],
+    maxSpots: { type: "integer", minimum: 1 },
+    priceMultiplier: { type: "number", minimum: 0.1, maximum: 9.9 },
+    specialPrice: { type: "number", minimum: 0, nullable: true },
+    isBlocked: { type: "boolean" },
+    isHoliday: { type: "boolean" },
   },
-  
-  // Status
-  isActive: boolean,
-  deletedAt: Date | null,
-  deletedBy: string | null,
-  
-  // Timestamps
-  createdAt: Date,
-  updatedAt: Date,
-}
+  additionalProperties: false,
+};
+
+const updateTimeSlotSchema = {
+  type: "object",
+  minProperties: 1,
+  properties: {
+    availableSpots: { type: "integer", minimum: 0 },
+    maxSpots: { type: "integer", minimum: 1 },
+    reservedSpots: { type: "integer", minimum: 0 },
+    confirmedSpots: { type: "integer", minimum: 0 },
+    priceMultiplier: { type: "number", minimum: 0.1, maximum: 9.9 },
+    specialPrice: { type: "number", minimum: 0, nullable: true },
+    isBlocked: { type: "boolean" },
+    isHoliday: { type: "boolean" },
+  },
+  additionalProperties: false,
+};
+
+module.exports = {
+  createAttractionSchema,
+  createTimeSlotSchema,
+  updateTimeSlotSchema,
+  updateAttractionSchema,
+};

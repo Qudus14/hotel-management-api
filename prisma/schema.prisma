@@ -457,11 +457,11 @@ model Vendor {
   avgRating          Float        @default(0)
   totalReviews       Int          @default(0)
 
-  user               User                @relation(fields: [userId], references: [id])
-  hotel              Hotel?
-  carStore           CarStore?
-  airline            Airline?
-  attractionOperator AttractionOperator?
+  user               User                 @relation(fields: [userId], references: [id])
+  hotel              Hotel[]
+  carStore           CarStore[]
+  airline            Airline[]
+  attractionOperator AttractionOperator[]
   notifications      Notification[]
 
   createdAt DateTime @default(now())
@@ -475,9 +475,9 @@ model Vendor {
 
 model Hotel {
   id            String   @id @default(uuid())
-  vendorId      String   @unique
+  vendorId      String
   name          String
-  slug          String   @unique
+  slug          String
   description   String   @db.Text
   starRating    Int
   checkInTime   String
@@ -653,13 +653,22 @@ model Booking {
 // ==================== CAR RENTAL ====================
 
 model CarStore {
-  id          String   @id @default(uuid())
-  vendorId    String   @unique
+  id          String  @id @default(uuid())
+  vendorId    String
   name        String
   description String?
-  isActive    Boolean  @default(true)
-  isApproved  Boolean  @default(false)
-  images      String[]
+  isActive    Boolean @default(true)
+  isApproved  Boolean @default(false)
+  address     String?
+  city        String?
+  state       String?
+  latitude    Float
+  longitude   Float
+  phoneNumber String?
+  email       String?
+  website     String?
+
+  images String[]
 
   vendor          Vendor           @relation(fields: [vendorId], references: [id])
   pickupLocations PickupLocation[]
@@ -776,7 +785,7 @@ model StoreHours {
 
 model Airline {
   id          String  @id @default(uuid())
-  vendorId    String  @unique
+  vendorId    String
   name        String
   iataCode    String  @unique
   logoUrl     String?
@@ -985,7 +994,7 @@ model BookingAddOn {
 
 model AttractionOperator {
   id          String  @id @default(uuid())
-  vendorId    String  @unique
+  vendorId    String
   name        String
   description String?
   isActive    Boolean @default(true)

@@ -1,12 +1,19 @@
 const { prisma } = require("../../config/db");
 
+// ==================== GET SEATS BY FLIGHT ====================
 const getSeatsByFlight = async (req, res) => {
   try {
     const { flightId } = req.params;
     const { class: seatClass, available } = req.query;
 
-    const flight = await prisma.flight.findUnique({ where: { id: flightId } });
-    if (!flight) {
+    const flight = await prisma.flight.findUnique({
+      where: { id: flightId },
+      include: {
+        airline: { select: { id: true, name: true, iataCode: true } },
+      },
+    });
+
+    if (!flight || flight.deletedAt) {
       return res
         .status(404)
         .json({ status: "fail", error: "Flight not found" });
@@ -14,7 +21,6 @@ const getSeatsByFlight = async (req, res) => {
 
     const where = { flightId };
 
-    // Optional filters
     if (seatClass) where.class = seatClass; // Economy, Business, First
     if (available !== undefined) where.isAvailable = available === "true";
 
@@ -22,7 +28,7 @@ const getSeatsByFlight = async (req, res) => {
       where,
       orderBy: { seatNumber: "asc" },
       select: {
-        id: true, // ← this is what you pass as seatId when booking
+        id: true, // ← use this as seatId when booking
         seatNumber: true,
         class: true,
         price: true,
@@ -44,8 +50,13 @@ const getSeatsByFlight = async (req, res) => {
         flightNumber: flight.flightNumber,
         from: flight.departureAirport,
         to: flight.arrivalAirport,
+        originCity: flight.originCity,
+        destinationCity: flight.destinationCity,
         departure: flight.departureTime,
+        arrival: flight.arrivalTime,
+        durationMinutes: flight.durationMinutes,
         status: flight.status,
+        airline: flight.airline,
       },
       summary: {
         total: seats.length,

@@ -22,16 +22,11 @@ const createBookings = async (req, res) => {
       cartId,
     } = req.body;
 
-    // Get room with hotel and category information
     const room = await prisma.room.findUnique({
       where: { id: roomId },
       include: {
-        hotel: {
-          select: { id: true, name: true },
-        },
-        roomCategory: {
-          select: { id: true, name: true },
-        },
+        hotel: { select: { id: true, name: true } },
+        roomCategory: { select: { id: true, name: true } },
       },
     });
 
@@ -49,10 +44,12 @@ const createBookings = async (req, res) => {
     const checkOut = new Date(checkOutDate);
 
     if (checkIn >= checkOut) {
-      return res.status(400).json({
-        status: "fail",
-        error: "Check-out date must be after check-in date",
-      });
+      return res
+        .status(400)
+        .json({
+          status: "fail",
+          error: "Check-out date must be after check-in date",
+        });
     }
 
     if (checkIn < new Date()) {
@@ -63,11 +60,10 @@ const createBookings = async (req, res) => {
 
     const numberOfNights = Math.ceil((checkOut - checkIn) / (1000 * 3600 * 24));
     const subtotal = parseFloat(room.price) * numberOfNights;
-    const tax = parseFloat((subtotal * 0.075).toFixed(2)); // 7.5% VAT
-    const serviceFee = parseFloat((subtotal * 0.02).toFixed(2)); // 2% service fee
+    const tax = parseFloat((subtotal * 0.075).toFixed(2));
+    const serviceFee = parseFloat((subtotal * 0.02).toFixed(2));
     const totalPrice = parseFloat((subtotal + tax + serviceFee).toFixed(2));
 
-    // Check date conflicts
     const conflict = await prisma.booking.findFirst({
       where: {
         roomId,
@@ -77,20 +73,21 @@ const createBookings = async (req, res) => {
     });
 
     if (conflict) {
-      return res.status(409).json({
-        status: "fail",
-        error: "Room is already booked for these dates",
-      });
+      return res
+        .status(409)
+        .json({
+          status: "fail",
+          error: "Room is already booked for these dates",
+        });
     }
 
-    // Wrap in transaction so hotel + unified booking are always in sync
     const result = await prisma.$transaction(async (tx) => {
       const hotelBooking = await tx.booking.create({
         data: {
           roomId,
           userId,
-          hotelId: room.hotelId, // ✅ Add hotel ID
-          roomCategoryId: room.roomCategoryId, // ✅ Add category ID
+          hotelId: room.hotelId,
+          roomCategoryId: room.roomCategoryId,
           totalPrice,
           depositAmount: 0,
           status: "pending",
@@ -110,22 +107,10 @@ const createBookings = async (req, res) => {
             },
           },
           hotel: {
-            // ✅ Include hotel info
-            select: {
-              id: true,
-              name: true,
-              city: true,
-              address: true,
-            },
+            select: { id: true, name: true, city: true, address: true },
           },
           roomCategory: {
-            // ✅ Include category info
-            select: {
-              id: true,
-              name: true,
-              bedType: true,
-              maxOccupancy: true,
-            },
+            select: { id: true, name: true, bedType: true, maxOccupancy: true },
           },
           user: { select: { name: true, email: true } },
         },
@@ -152,7 +137,6 @@ const createBookings = async (req, res) => {
           cartId: cartId || null,
           specialRequests: specialRequests || null,
           metadata: {
-            // ✅ Store additional info in metadata
             hotelId: room.hotelId,
             hotelName: room.hotel?.name,
             roomCategoryId: room.roomCategoryId,
@@ -162,7 +146,6 @@ const createBookings = async (req, res) => {
         },
       });
 
-      // Link the hotel booking back to unified
       await tx.booking.update({
         where: { id: hotelBooking.id },
         data: { unifiedBookingId: unifiedBooking.id },
@@ -185,8 +168,8 @@ const createBookings = async (req, res) => {
         booking: {
           id: result.hotelBooking.id,
           room: result.hotelBooking.room,
-          hotel: result.hotelBooking.hotel, // ✅ Return hotel info
-          roomCategory: result.hotelBooking.roomCategory, // ✅ Return category info
+          hotel: result.hotelBooking.hotel,
+          roomCategory: result.hotelBooking.roomCategory,
           guest: result.hotelBooking.user,
           checkInDate: result.hotelBooking.checkInDate,
           checkOutDate: result.hotelBooking.checkOutDate,
@@ -222,7 +205,7 @@ const createBookings = async (req, res) => {
   }
 };
 
-// ==================== GET ALL BOOKINGS (admin sees all, user sees own) ====================
+// ==================== GET ALL BOOKINGS ====================
 const getBookings = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -231,7 +214,7 @@ const getBookings = async (req, res) => {
 
     const where = {};
     if (req.user.role !== "admin") {
-      where.userId = req.user.sub; // FIX: was req.user.id — JWT uses sub
+      where.userId = req.user.sub;
     }
 
     const [bookings, total] = await Promise.all([
@@ -305,7 +288,6 @@ const getBookingById = async (req, res) => {
         .json({ status: "fail", message: "Booking not found" });
     }
 
-    // Non-admin users can only view their own bookings
     if (req.user.role !== "admin" && booking.userId !== req.user.sub) {
       return res.status(403).json({ status: "fail", message: "Access denied" });
     }
@@ -319,13 +301,12 @@ const getBookingById = async (req, res) => {
   }
 };
 
-// ==================== UPDATE BOOKING (admin: status transitions) ====================
+// ==================== UPDATE BOOKING ====================
 const updateBookingById = async (req, res) => {
   try {
     const { bookingId } = req.params;
     let { status, paymentStatus } = req.body;
 
-    // Normalize paymentStatus to match Prisma enum
     const paymentStatusMap = {
       completed: "SUCCESSFUL",
       pending: "PENDING",
@@ -347,7 +328,6 @@ const updateBookingById = async (req, res) => {
         .json({ status: "fail", error: "Booking not found" });
     }
 
-    // Validate status transition
     const validTransitions = {
       pending: ["confirmed", "cancelled"],
       confirmed: ["checked_in", "cancelled", "no_show"],
@@ -370,12 +350,10 @@ const updateBookingById = async (req, res) => {
     const updateData = {};
     if (status) updateData.status = status;
     if (paymentStatus) updateData.paymentStatus = paymentStatus;
-    if (status === "checked_in" && !existingBooking.actualCheckIn) {
+    if (status === "checked_in" && !existingBooking.actualCheckIn)
       updateData.actualCheckIn = new Date();
-    }
-    if (status === "checked_out" && !existingBooking.actualCheckOut) {
+    if (status === "checked_out" && !existingBooking.actualCheckOut)
       updateData.actualCheckOut = new Date();
-    }
 
     const updatedBooking = await prisma.booking.update({
       where: { id: bookingId },
@@ -386,7 +364,6 @@ const updateBookingById = async (req, res) => {
       },
     });
 
-    // Mirror payment status to unified booking if changed
     if (paymentStatus && existingBooking.unifiedBookingId) {
       await prisma.unifiedBooking.update({
         where: { id: existingBooking.unifiedBookingId },
@@ -401,15 +378,17 @@ const updateBookingById = async (req, res) => {
     });
   } catch (error) {
     console.error("Update Booking Error:", error);
-    return res.status(500).json({
-      status: "error",
-      error: "Internal Server Error",
-      details: error.message,
-    });
+    return res
+      .status(500)
+      .json({
+        status: "error",
+        error: "Internal Server Error",
+        details: error.message,
+      });
   }
 };
 
-// ==================== CANCEL BOOKING (hotel-level, no refund logic) ====================
+// ==================== CANCEL BOOKING ====================
 const cancelBooking = async (req, res) => {
   try {
     const { bookingId } = req.params;
@@ -425,7 +404,6 @@ const cancelBooking = async (req, res) => {
         .json({ status: "fail", error: "Booking not found" });
     }
 
-    // Only owner or admin can cancel
     if (req.user.role !== "admin" && booking.userId !== userId) {
       return res.status(403).json({ status: "fail", error: "Access denied" });
     }
@@ -455,7 +433,7 @@ const cancelBooking = async (req, res) => {
   }
 };
 
-// ==================== DELETE BOOKING (admin only) ====================
+// ==================== DELETE BOOKING ====================
 const deleteBooking = async (req, res) => {
   try {
     const { bookingId } = req.params;
@@ -518,6 +496,26 @@ const getMyUnifiedBookings = async (req, res) => {
               paymentMethod: true,
             },
           },
+          carRentals: {
+            take: 1,
+            include: {
+              car: {
+                select: {
+                  make: true,
+                  model: true,
+                  year: true,
+                  color: true,
+                  images: true,
+                  plateNumber: true,
+                  category: { select: { name: true, pricePerDay: true } },
+                  pickupLocation: { select: { name: true, address: true } },
+                  carStore: {
+                    select: { name: true, phoneNumber: true, email: true },
+                  },
+                },
+              },
+            },
+          },
         },
       }),
       prisma.unifiedBooking.count({ where }),
@@ -568,6 +566,8 @@ const getMyUnifiedBookings = async (req, res) => {
               timeSlot: true,
             },
           });
+        } else if (booking.serviceType === "CAR") {
+          serviceDetails = booking.carRentals?.[0] || null;
         }
 
         return { ...booking, serviceDetails };
@@ -624,7 +624,6 @@ const cancelUnifiedBooking = async (req, res) => {
       });
     }
 
-    // Cancel the service-specific record
     let cancelledServiceBooking = null;
 
     if (
@@ -639,13 +638,11 @@ const cancelUnifiedBooking = async (req, res) => {
       unifiedBooking.serviceType === "FLIGHT" &&
       unifiedBooking.flightBookingId
     ) {
-      // Fetch segments to release seats
       const flightBooking = await prisma.flightBooking.findUnique({
         where: { id: unifiedBooking.flightBookingId },
         include: { segments: true },
       });
       const seatIds = flightBooking.segments.map((s) => s.seatId);
-
       await prisma.$transaction([
         prisma.flightBooking.update({
           where: { id: unifiedBooking.flightBookingId },
@@ -665,7 +662,6 @@ const cancelUnifiedBooking = async (req, res) => {
         where: { id: unifiedBooking.attractionBookingId },
         data: { status: "CANCELLED" },
       });
-
       if (cancelledServiceBooking?.timeSlotId) {
         await prisma.touristAttractionTimeSlot.update({
           where: { id: cancelledServiceBooking.timeSlotId },
@@ -677,6 +673,17 @@ const cancelUnifiedBooking = async (req, res) => {
               increment: cancelledServiceBooking.numberOfPeople,
             },
           },
+        });
+      }
+    } else if (unifiedBooking.serviceType === "CAR") {
+      // Find the linked car rental via relation
+      const linkedRental = await prisma.carRental.findFirst({
+        where: { unifiedBookingId: unifiedBooking.id },
+      });
+      if (linkedRental) {
+        cancelledServiceBooking = await prisma.carRental.update({
+          where: { id: linkedRental.id },
+          data: { status: "cancelled" },
         });
       }
     }
@@ -692,10 +699,13 @@ const cancelUnifiedBooking = async (req, res) => {
       if (unifiedBooking.serviceType === "HOTEL") {
         refundPercentage =
           hoursUntilStart > 48 ? 100 : hoursUntilStart > 24 ? 50 : 0;
+      } else if (unifiedBooking.serviceType === "CAR") {
+        refundPercentage =
+          hoursUntilStart > 48 ? 100 : hoursUntilStart > 24 ? 50 : 0;
       } else if (unifiedBooking.serviceType === "ATTRACTION") {
         refundPercentage = 90;
       } else if (unifiedBooking.serviceType === "FLIGHT") {
-        refundPercentage = 0; // Airlines typically non-refundable
+        refundPercentage = 0;
       }
 
       refundAmount = parseFloat(
@@ -706,7 +716,6 @@ const cancelUnifiedBooking = async (req, res) => {
       );
     }
 
-    // Update unified booking + process wallet refund in one transaction
     const [updatedUnifiedBooking] = await prisma.$transaction(async (tx) => {
       const updated = await tx.unifiedBooking.update({
         where: { id: unifiedBookingId },
