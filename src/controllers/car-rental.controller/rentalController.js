@@ -65,12 +65,10 @@ const createRental = async (req, res) => {
     }
 
     if (!car.carStore.isApproved || !car.carStore.isActive) {
-      return res
-        .status(403)
-        .json({
-          status: "fail",
-          error: "This car store is not currently active",
-        });
+      return res.status(403).json({
+        status: "fail",
+        error: "This car store is not currently active",
+      });
     }
 
     // Check for conflicting rentals
@@ -243,6 +241,12 @@ const getAllRentals = async (req, res) => {
         take: limit,
         orderBy: { createdAt: "desc" },
         include: {
+          user: {
+            select: {
+              name: true,
+              email: true,
+            },
+          },
           car: {
             select: {
               make: true,
@@ -294,6 +298,12 @@ const getMyRentals = async (req, res) => {
         take: limit,
         orderBy: { createdAt: "desc" },
         include: {
+          user: {
+            select: {
+              name: true,
+              email: true,
+            },
+          },
           car: {
             select: {
               make: true,
@@ -409,6 +419,12 @@ const getRentalById = async (req, res) => {
     const rental = await prisma.carRental.findUnique({
       where: { id: rentalId },
       include: {
+        user: {
+          select: {
+            name: true,
+            email: true,
+          },
+        },
         car: {
           include: {
             category: true,
@@ -492,12 +508,10 @@ const updateRental = async (req, res) => {
       const newReturn = returnDate ? new Date(returnDate) : rental.returnDate;
 
       if (newPickup >= newReturn) {
-        return res
-          .status(400)
-          .json({
-            status: "fail",
-            error: "returnDate must be after pickupDate",
-          });
+        return res.status(400).json({
+          status: "fail",
+          error: "returnDate must be after pickupDate",
+        });
       }
 
       updateData.pickupDate = newPickup;

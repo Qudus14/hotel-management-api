@@ -185,7 +185,7 @@ router.get("/my-rentals", getMyRentals);
 
 /**
  * @swagger
- * /car-store/rental{rentalId}:
+ * /car-store/rental/{rentalId}:
  *   get:
  *     summary: Get a single rental by ID (owner or admin)
  *     tags: [Rentals]

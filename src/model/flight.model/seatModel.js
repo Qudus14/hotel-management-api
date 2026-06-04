@@ -1,4 +1,6 @@
 const seatModel= {
+    id:string,
+    planeId:string,
     seatNumber: {
         type: String,
         required: true,
@@ -8,24 +10,14 @@ const seatModel= {
         enum: ['Economy', 'Business', 'First'],
         required: true,
     },
-    isAvailable: {
+    isWindow: {
         type: Boolean,
-        default: true,
+        default: false,
     },
-    price: {
-        type: Number,
-        required: true,
-    },
-    flightId: {
-        type: String,
-        required: true,
-    },
-    createdAt: {
-        type: Date,
-        default: Date.now,
-    },
-    updatedAt: {
-        type: Date,
-        default: Date.now,
-    },
+    isAisle: {
+        type: Boolean,
+        default: false,
+    }, 
+    plane,
+    bookingSegments
 }
