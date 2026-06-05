@@ -6,7 +6,7 @@ const {
   getMyUnifiedBookings,
   cancelUnifiedBooking,
   getAdminUnifiedBookings,
-} = require("../controllers/UnifiedBookingController");
+} = require("../controllers/unifiedBookingController");
 
 // All routes below require authentication
 router.use(protect);
