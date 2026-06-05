@@ -44,12 +44,10 @@ const createBookings = async (req, res) => {
     const checkOut = new Date(checkOutDate);
 
     if (checkIn >= checkOut) {
-      return res
-        .status(400)
-        .json({
-          status: "fail",
-          error: "Check-out date must be after check-in date",
-        });
+      return res.status(400).json({
+        status: "fail",
+        error: "Check-out date must be after check-in date",
+      });
     }
 
     if (checkIn < new Date()) {
@@ -73,12 +71,10 @@ const createBookings = async (req, res) => {
     });
 
     if (conflict) {
-      return res
-        .status(409)
-        .json({
-          status: "fail",
-          error: "Room is already booked for these dates",
-        });
+      return res.status(409).json({
+        status: "fail",
+        error: "Room is already booked for these dates",
+      });
     }
 
     const result = await prisma.$transaction(async (tx) => {
@@ -378,13 +374,11 @@ const updateBookingById = async (req, res) => {
     });
   } catch (error) {
     console.error("Update Booking Error:", error);
-    return res
-      .status(500)
-      .json({
-        status: "error",
-        error: "Internal Server Error",
-        details: error.message,
-      });
+    return res.status(500).json({
+      status: "error",
+      error: "Internal Server Error",
+      details: error.message,
+    });
   }
 };
 
@@ -460,326 +454,6 @@ const deleteBooking = async (req, res) => {
   }
 };
 
-// ==================== UNIFIED: GET MY BOOKINGS (all services) ====================
-const getMyUnifiedBookings = async (req, res) => {
-  try {
-    const userId = req.user.sub;
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
-    const { serviceType, bookingStatus } = req.query;
-
-    const where = { userId };
-    if (
-      serviceType &&
-      ["HOTEL", "FLIGHT", "ATTRACTION", "CAR"].includes(serviceType)
-    ) {
-      where.serviceType = serviceType;
-    }
-    if (bookingStatus) {
-      where.bookingStatus = bookingStatus;
-    }
-
-    const [bookings, total] = await Promise.all([
-      prisma.unifiedBooking.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { createdAt: "desc" },
-        include: {
-          payments: {
-            where: { status: "SUCCESSFUL" },
-            select: {
-              amount: true,
-              paidAt: true,
-              reference: true,
-              paymentMethod: true,
-            },
-          },
-          carRentals: {
-            take: 1,
-            include: {
-              car: {
-                select: {
-                  make: true,
-                  model: true,
-                  year: true,
-                  color: true,
-                  images: true,
-                  plateNumber: true,
-                  category: { select: { name: true, pricePerDay: true } },
-                  pickupLocation: { select: { name: true, address: true } },
-                  carStore: {
-                    select: { name: true, phoneNumber: true, email: true },
-                  },
-                },
-              },
-            },
-          },
-        },
-      }),
-      prisma.unifiedBooking.count({ where }),
-    ]);
-
-    // Enrich with service-specific details in parallel
-    const enrichedBookings = await Promise.all(
-      bookings.map(async (booking) => {
-        let serviceDetails = null;
-
-        if (booking.serviceType === "HOTEL" && booking.hotelBookingId) {
-          serviceDetails = await prisma.booking.findUnique({
-            where: { id: booking.hotelBookingId },
-            include: {
-              room: {
-                select: {
-                  roomNumber: true,
-                  type: true,
-                  floor: true,
-                  images: true,
-                },
-              },
-            },
-          });
-        } else if (
-          booking.serviceType === "FLIGHT" &&
-          booking.flightBookingId
-        ) {
-          serviceDetails = await prisma.flightBooking.findUnique({
-            where: { id: booking.flightBookingId },
-            include: { segments: { include: { flight: true, seat: true } } },
-          });
-        } else if (
-          booking.serviceType === "ATTRACTION" &&
-          booking.attractionBookingId
-        ) {
-          serviceDetails = await prisma.touristAttractionBooking.findUnique({
-            where: { id: booking.attractionBookingId },
-            include: {
-              attraction: {
-                select: {
-                  name: true,
-                  category: true,
-                  city: true,
-                  images: true,
-                },
-              },
-              timeSlot: true,
-            },
-          });
-        } else if (booking.serviceType === "CAR") {
-          serviceDetails = booking.carRentals?.[0] || null;
-        }
-
-        return { ...booking, serviceDetails };
-      }),
-    );
-
-    return res.status(200).json({
-      status: "success",
-      results: enrichedBookings.length,
-      total,
-      totalPages: Math.ceil(total / limit),
-      currentPage: page,
-      data: enrichedBookings,
-    });
-  } catch (error) {
-    console.error("Get Unified Bookings Error:", error);
-    return res
-      .status(500)
-      .json({ status: "error", error: "Internal Server Error" });
-  }
-};
-
-// ==================== UNIFIED: CANCEL ANY BOOKING (with refund) ====================
-const cancelUnifiedBooking = async (req, res) => {
-  try {
-    const { unifiedBookingId } = req.params;
-    const userId = req.user.sub;
-    const { reason } = req.body;
-
-    const unifiedBooking = await prisma.unifiedBooking.findFirst({
-      where: { id: unifiedBookingId, userId },
-    });
-
-    if (!unifiedBooking) {
-      return res
-        .status(404)
-        .json({ status: "fail", error: "Booking not found" });
-    }
-
-    if (unifiedBooking.bookingStatus === "CANCELLED") {
-      return res
-        .status(400)
-        .json({ status: "fail", error: "Booking is already cancelled" });
-    }
-
-    if (
-      unifiedBooking.cancellationDeadline &&
-      new Date() > unifiedBooking.cancellationDeadline
-    ) {
-      return res.status(400).json({
-        status: "fail",
-        error: "Cancellation window has expired",
-        deadline: unifiedBooking.cancellationDeadline,
-      });
-    }
-
-    let cancelledServiceBooking = null;
-
-    if (
-      unifiedBooking.serviceType === "HOTEL" &&
-      unifiedBooking.hotelBookingId
-    ) {
-      cancelledServiceBooking = await prisma.booking.update({
-        where: { id: unifiedBooking.hotelBookingId },
-        data: { status: "cancelled", cancelledAt: new Date() },
-      });
-    } else if (
-      unifiedBooking.serviceType === "FLIGHT" &&
-      unifiedBooking.flightBookingId
-    ) {
-      const flightBooking = await prisma.flightBooking.findUnique({
-        where: { id: unifiedBooking.flightBookingId },
-        include: { segments: true },
-      });
-      const seatIds = flightBooking.segments.map((s) => s.seatId);
-      await prisma.$transaction([
-        prisma.flightBooking.update({
-          where: { id: unifiedBooking.flightBookingId },
-          data: { status: "CANCELLED" },
-        }),
-        prisma.seat.updateMany({
-          where: { id: { in: seatIds } },
-          data: { isAvailable: true },
-        }),
-      ]);
-      cancelledServiceBooking = flightBooking;
-    } else if (
-      unifiedBooking.serviceType === "ATTRACTION" &&
-      unifiedBooking.attractionBookingId
-    ) {
-      cancelledServiceBooking = await prisma.touristAttractionBooking.update({
-        where: { id: unifiedBooking.attractionBookingId },
-        data: { status: "CANCELLED" },
-      });
-      if (cancelledServiceBooking?.timeSlotId) {
-        await prisma.touristAttractionTimeSlot.update({
-          where: { id: cancelledServiceBooking.timeSlotId },
-          data: {
-            confirmedSpots: {
-              decrement: cancelledServiceBooking.numberOfPeople,
-            },
-            availableSpots: {
-              increment: cancelledServiceBooking.numberOfPeople,
-            },
-          },
-        });
-      }
-    } else if (unifiedBooking.serviceType === "CAR") {
-      // Find the linked car rental via relation
-      const linkedRental = await prisma.carRental.findFirst({
-        where: { unifiedBookingId: unifiedBooking.id },
-      });
-      if (linkedRental) {
-        cancelledServiceBooking = await prisma.carRental.update({
-          where: { id: linkedRental.id },
-          data: { status: "cancelled" },
-        });
-      }
-    }
-
-    // Calculate refund
-    let refundAmount = 0;
-    if (unifiedBooking.paymentStatus === "SUCCESSFUL") {
-      const hoursUntilStart =
-        (new Date(unifiedBooking.serviceStartDate) - new Date()) /
-        (1000 * 3600);
-      let refundPercentage = 0;
-
-      if (unifiedBooking.serviceType === "HOTEL") {
-        refundPercentage =
-          hoursUntilStart > 48 ? 100 : hoursUntilStart > 24 ? 50 : 0;
-      } else if (unifiedBooking.serviceType === "CAR") {
-        refundPercentage =
-          hoursUntilStart > 48 ? 100 : hoursUntilStart > 24 ? 50 : 0;
-      } else if (unifiedBooking.serviceType === "ATTRACTION") {
-        refundPercentage = 90;
-      } else if (unifiedBooking.serviceType === "FLIGHT") {
-        refundPercentage = 0;
-      }
-
-      refundAmount = parseFloat(
-        (
-          (parseFloat(unifiedBooking.totalPrice) * refundPercentage) /
-          100
-        ).toFixed(2),
-      );
-    }
-
-    const [updatedUnifiedBooking] = await prisma.$transaction(async (tx) => {
-      const updated = await tx.unifiedBooking.update({
-        where: { id: unifiedBookingId },
-        data: {
-          bookingStatus: "CANCELLED",
-          cancelledAt: new Date(),
-          cancelledBy: userId,
-          cancellationReason: reason || null,
-          refundAmount: refundAmount > 0 ? refundAmount : null,
-          refundProcessedAt: refundAmount > 0 ? new Date() : null,
-        },
-      });
-
-      if (refundAmount > 0) {
-        const user = await tx.user.findUnique({ where: { id: userId } });
-        const balanceBefore = parseFloat(user.walletBalance);
-        const balanceAfter = parseFloat(
-          (balanceBefore + refundAmount).toFixed(2),
-        );
-
-        await tx.user.update({
-          where: { id: userId },
-          data: { walletBalance: { increment: refundAmount } },
-        });
-
-        await tx.walletTransaction.create({
-          data: {
-            userId,
-            amount: refundAmount,
-            type: "CREDIT",
-            balanceBefore,
-            balanceAfter,
-            description: `Refund for cancelled booking ${unifiedBooking.referenceCode}`,
-            reference: `REF-${unifiedBooking.referenceCode}-${Date.now()}`,
-            unifiedBookingId: unifiedBooking.id,
-            status: "COMPLETED",
-          },
-        });
-      }
-
-      return [updated];
-    });
-
-    return res.status(200).json({
-      status: "success",
-      message: "Booking cancelled successfully",
-      data: {
-        unifiedBooking: updatedUnifiedBooking,
-        refund: {
-          eligible: refundAmount > 0,
-          amount: refundAmount,
-          currency: "NGN",
-          processedToWallet: refundAmount > 0,
-        },
-      },
-    });
-  } catch (error) {
-    console.error("Cancel Unified Booking Error:", error);
-    return res
-      .status(500)
-      .json({ status: "error", error: "Internal Server Error" });
-  }
-};
-
 module.exports = {
   createBookings,
   getBookings,
@@ -787,6 +461,4 @@ module.exports = {
   updateBookingById,
   cancelBooking,
   deleteBooking,
-  getMyUnifiedBookings,
-  cancelUnifiedBooking,
 };

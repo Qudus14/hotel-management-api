@@ -13,8 +13,6 @@ const {
   updateBookingById,
   deleteBooking,
   cancelBooking,
-  getMyUnifiedBookings,
-  cancelUnifiedBooking,
 } = require("../../controllers/hotel.controller/bookingController");
 
 router.use(protect);
@@ -113,45 +111,6 @@ router.use(protect);
 
 /**
  * @openapi
- * /hotel/bookings/my-bookings:
- *   get:
- *     tags: [Unified Bookings]
- *     summary: Get all my bookings across all services (hotel, flight, attraction)
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: page
- *         schema:
- *           type: integer
- *           default: 1
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *           default: 10
- *       - in: query
- *         name: serviceType
- *         schema:
- *           type: string
- *           enum: [HOTEL, FLIGHT, ATTRACTION, CAR]
- *         description: Filter by service type
- *       - in: query
- *         name: bookingStatus
- *         schema:
- *           type: string
- *           enum: [PENDING_PAYMENT, CONFIRMED, COMPLETED, CANCELLED, REFUNDED, NO_SHOW]
- *         description: Filter by booking status
- *     responses:
- *       200:
- *         description: Bookings retrieved successfully
- *       401:
- *         description: Unauthorized
- */
-router.get("/my-bookings", getMyUnifiedBookings); // ✅ GET static — safe before /:bookingId
-
-/**
- * @openapi
  * /hotel/bookings:
  *   get:
  *     tags: [Hotel Bookings]
@@ -241,52 +200,6 @@ router.post("/", validateSchema(bookingSchema), createBookings);
 // /unified/:param must come before /:bookingId
 // because Express would match "unified" as bookingId
 // ─────────────────────────────────────────────
-
-/**
- * @openapi
- * /hotel/bookings/unified/{unifiedBookingId}/cancel:
- *   patch:
- *     tags: [Unified Bookings]
- *     summary: Cancel any booking (hotel, flight, or attraction) with automatic refund
- *     description: |
- *       Cancels a booking through the unified system. Refund policy:
- *       - **Hotel**: 100% refund if cancelled 48h+ before check-in, 50% within 24–48h, 0% under 24h
- *       - **Attraction**: 90% refund
- *       - **Flight**: No refund
- *
- *       Refund is automatically credited to the user's wallet.
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: unifiedBookingId
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *         description: The unified booking ID from the `unified.id` field in any booking response
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               reason:
- *                 type: string
- *                 example: "Change of plans"
- *     responses:
- *       200:
- *         description: Booking cancelled successfully
- *       400:
- *         description: Already cancelled or cancellation window expired
- *       403:
- *         description: Access denied — not your booking
- *       404:
- *         description: Booking not found
- *       500:
- *         description: Internal server error
- */
-router.patch("/unified/:unifiedBookingId/cancel", cancelUnifiedBooking); // ✅ before /:bookingId
 
 // ─────────────────────────────────────────────
 // STEP 3: PARAMETERIZED ROUTES LAST
