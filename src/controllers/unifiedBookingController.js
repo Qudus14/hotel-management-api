@@ -77,6 +77,59 @@ const getAdminUnifiedBookings = async (req, res) => {
   }
 };
 
+const getAdminUnifiedBookingsById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const booking = await prisma.unifiedBooking.findUnique({
+      where: { id: String(id) },
+      include: {
+        user: { select: { name: true, email: true, phoneNumber: true } },
+        payments: { where: { status: "SUCCESSFUL" } },
+        bookings: { include: { room: { include: { hotel: true } } } },
+        flightBookings: {
+          include: { segments: { include: { flight: true, seat: true } } },
+        },
+        attractionBookings: { include: { attraction: true, timeSlot: true } },
+        carRentals: { include: { car: { include: { carStore: true } } } },
+      },
+    });
+
+    if (!booking) {
+      return res
+        .status(404)
+        .json({ status: "fail", error: "Unified booking records not found" });
+    }
+
+    // Transform single record into your predictable dashboard schema
+    const transformed = {
+      id: booking.id,
+      referenceCode: booking.referenceCode,
+      source: booking.serviceType.toLowerCase(),
+      serviceName: booking.serviceType,
+      customerName: booking.user.name,
+      amount: parseFloat(booking.totalPrice),
+      paymentStatus: booking.paymentStatus.toLowerCase(),
+      status: booking.bookingStatus.toLowerCase(),
+      dates: getServiceDates(booking),
+      serviceDetails: getServiceDetails(booking),
+      createdAt: booking.createdAt,
+      user: booking.user,
+      raw: booking,
+    };
+
+    return res.status(200).json({
+      status: "success",
+      data: transformed,
+    });
+  } catch (error) {
+    console.error("Get Admin Unified Booking By ID Error:", error);
+    return res
+      .status(500)
+      .json({ status: "error", error: "Internal Server Error" });
+  }
+};
+
 // Helper functions
 function getServiceDates(booking) {
   if (booking.serviceType === "HOTEL" && booking.bookings[0]) {
@@ -449,5 +502,6 @@ const cancelUnifiedBooking = async (req, res) => {
 module.exports = {
   cancelUnifiedBooking,
   getAdminUnifiedBookings,
+  getAdminUnifiedBookingsById,
   getMyUnifiedBookings,
 };

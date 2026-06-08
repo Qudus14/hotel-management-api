@@ -6,6 +6,7 @@ const {
   getMyUnifiedBookings,
   cancelUnifiedBooking,
   getAdminUnifiedBookings,
+  getAdminUnifiedBookingsById,
 } = require("../controllers/unifiedBookingController");
 
 // All routes below require authentication
@@ -156,5 +157,35 @@ router.patch("/cancelBooking/:unifiedBookingId", cancelUnifiedBooking);
  *         description: Internal server error
  */
 router.get("/getBooking", restrictTo("admin"), getAdminUnifiedBookings);
+
+/**
+ * @openapi
+ * /unifiedBookings/getBooking/{id}:
+ *   get:
+ *     tags: [Unified Bookings - Admin]
+ *     summary: Get a specific unified booking by ID (admin only)
+ *     description: Returns the full details and deeply nested raw payloads of a single unified booking.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The unique identifier of the unified booking
+ *     responses:
+ *       200:
+ *         description: Booking details retrieved successfully
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden — admin access required
+ *       404:
+ *         description: Booking not found
+ *       500:
+ *         description: Internal server error
+ */
+router.get("/getBooking/:id", restrictTo("admin"), getAdminUnifiedBookingsById);
 
 module.exports = router;
