@@ -9,9 +9,6 @@ const {
   getAdminUnifiedBookingsById,
 } = require("../controllers/unifiedBookingController");
 
-// All routes below require authentication
-router.use(protect);
-
 /**
  * @openapi
  * /unifiedBookings/my-bookings:
